@@ -1,0 +1,38 @@
+<launch>
+
+    <!-- Robot namespace -->
+    <arg name="robot_name" default="my_gen3"/>
+    <arg name="start_delay_seconds" default="0"/>
+    <arg name="robot_ip" default="10.0.100.131"/>
+    <arg name="display_color" default="true"/>
+    <arg name="display_depth" default="true"/>
+    
+    <!-- <include file="$(find video_stream_opencv)/launch/camera.launch" > -->
+        <!-- <arg name="camera_name" value="color"/> -->
+        <!-- means video device 0, /dev/video0 -->
+        <!-- <arg name="video_stream_provider" value="rtsp://admin:admin@$(arg robot_ip)/color" /> -->
+        <!-- visualize on an image_view window the stream generated -->
+        <!-- <arg name="visualize" value="$(arg display_color)" /> -->
+   <!-- </include> -->
+   <!-- <include file="$(find video_stream_opencv)/launch/camera.launch" > -->
+        <!-- <arg name="camera_name" value="depth"/> -->
+        <!-- means video device 0, /dev/video0 -->
+        <!-- <arg name="video_stream_provider" value="rtsp://admin:admin@$(arg robot_ip)/depth" /> -->
+        <!-- visualize on an image_view window the stream generated -->
+        <!-- <arg name="visualize" value="$(arg display_depth)" /> -->
+    <!-- </include> -->
+    <!-- Launch the example in that namespace -->
+    <node name="calibration_color" pkg="cv_calibration" type="calibration_color.py" output="screen" launch-prefix="bash -c 'sleep $(arg start_delay_seconds); $0 $@' ">
+        <param name="robot_name" value="$(arg robot_name)"/>
+        <param name="robot_ip" value="$(arg robot_ip)"/>
+        <param name="color_address" value="rtsp://admin:admin@$(arg robot_ip)/color"/>
+        <param name="depth_address" value="rtsp://admin:admin@$(arg robot_ip)/depth"/>
+    </node>
+    <node name="calibration_depth" pkg="cv_calibration" type="calibration_depth.py" output="screen" launch-prefix="bash -c 'sleep $(arg start_delay_seconds); $0 $@' ">
+        <param name="robot_name" value="$(arg robot_name)"/>
+        <param name="robot_ip" value="$(arg robot_ip)"/>
+        <param name="color_address" value="rtsp://admin:admin@$(arg robot_ip)/color"/>
+        <param name="depth_address" value="rtsp://admin:admin@$(arg robot_ip)/depth"/>
+    </node>
+
+</launch>
