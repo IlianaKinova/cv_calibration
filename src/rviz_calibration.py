@@ -1,24 +1,28 @@
-from random import random
-from typing import Dict, Tuple
-
-import roslaunch
-from mss import mss
-import numpy as np
-import cv2 as cv
+# Ros imports
 import rospy as ros
-from tools.Calibrator import Calibrator
-from tools.utils import debugData, boxFromWindow, getColorStandardizedRect, rvizRemoveBorders, testAspectCorrection
-from tools.screenCapture import screenCapture
-import pathlib
+import roslaunch
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+
+# Image related imports
+import cv2 as cv
+from mss import mss
 import Xlib
 import Xlib.display
-from ewmh import EWMH
-from PIL import Image
-from tools.imageProcessor import screenImageProcessor, adjustParam, processingMethod, rectFloat, rectInt
-from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
-import tf.transformations
-from geometry_msgs.msg import TransformStamped
-from scipy.signal import lfilter
+
+# Tools imports
+from tools.imageProcessor import screenImageProcessor, adjustParam, processingMethod, rectInt
+from tools.Calibrator import Calibrator
+from tools.utils import debugData, checkInput, InputOption, sendTransform
+from tools.screenCapture import screenCapture
+from tools.UserHelp import askRVIZ, checkTopic, findWindows
+from tools.ValueFilter import ValueFilter
+from tools.WindowOperations import isolateCamera
+
+# Other imports
+from random import random
+from typing import Dict, Tuple
+import numpy as np
+import pathlib
 
 # Get display
 disp = Xlib.display.Display()
@@ -26,177 +30,6 @@ disp = Xlib.display.Display()
 # Get directory paths
 resources = pathlib.Path(__file__).parent.parent.joinpath('resources').resolve()
 launch = pathlib.Path(__file__).parent.parent.joinpath('launch').resolve()
-    
-class InputOption:
-    """
-    Used for checkInput to use as options to display to the user
-    """
-    def __init__(self, optionName:str, optionDesc:str):
-        """
-        optionName: The str to match in the input\n
-        optionDesc: A description of the action
-        """
-        self.name = optionName
-        self.desc = optionDesc
-
-    def __str__(self):
-        return f'\t({self.name}): {self.desc}'
-
-class ValueFilter:
-    """
-    Filters the values over time
-    """
-    def __init__(self, n:int, a:float, iterations:int):
-        self.buff = np.zeros((2, iterations))
-        self.n = n
-        self.a = a
-        self.b = [1.0 / n] * n 
-        self.iterations = iterations
-        self.index = 0
-
-    def write(self, x, y):
-        self.buff[0, self.index] = x
-        self.buff[1, self.index] = y
-        self.index = (self.index + 1) % self.iterations
-
-    @property
-    def value(self):
-        """
-        Filtered value
-        """
-        filx = lfilter(self.b, self.a, self.buff[0])
-        fily = lfilter(self.b, self.a, self.buff[1])
-        return filx.mean(), fily.mean()
-
-
-def checkInput(prompt:object='',*options:InputOption, logType=ros.loginfo, acceptEmpty=None, emptyDesc='Continue'):
-    """
-    Prompts the user to enter an option. It also lists the options.\n
-    Returns the text sent by the user
-    """
-
-    # Create the option to quit
-    optQuit = InputOption('q', 'Exit the program')
-    p = f'{prompt}'
-    p += f'\n{optQuit}'
-
-    # Add the additional options
-    for opt in options:
-        p += f'\n{opt}'
-
-    # If there are no additional options, by default an empty message is valid. However if acceptEmpty is set to False, 
-    # an empty message will fail and prompt the user again
-    if (acceptEmpty is None and len(options) == 0) or acceptEmpty is True:
-        optContinue = InputOption('Press [Enter]', emptyDesc)
-        p += f'\n{optContinue}'
-
-    # Promt the user until a valid option is chosen
-    while True:
-        logType(p)
-        try:
-            c = input()
-        except EOFError: # ctrl+d will end the program
-            raise KeyboardInterrupt()
-        if c == 'q': # End the program
-            raise KeyboardInterrupt()
-        if (acceptEmpty is None and c == '' and len(options) == 0) or acceptEmpty is True: # Manage empty input
-            break
-        if c in [opt.name for opt in options]: # Check if valid option
-            break
-        ros.logerr(f'Invalid option selected: {(c if c != "" else "[Enter]")}') # Notify if invalid option
-    
-    return c
-
-def checkTopic(topic:str, failMsg:str, successMsg:str):
-    """
-    Check if a specific namespace exists
-    """
-    while True:
-        topics = ros.get_published_topics(topic)
-        if len(topics) == 0:
-            checkInput(f'{failMsg}\nPress enter to retry',logType=ros.logerr)
-        else:
-            ros.loginfo(successMsg)
-            return
-
-def askRVIZ():
-    """
-    Guide the user to setup rviz to work with the program
-    """
-    userInput = checkInput('Start RVIZ.', InputOption('s', 'Skip rviz procedure.'), acceptEmpty=True)
-    if userInput == 's': # Allow skipping
-        return
-
-    userInput = checkInput('Please open the configuration found at .../cv_calibration/rviz/CompareDepthColor.rviz.',
-        InputOption('s', 'Skip rviz procedure.'), acceptEmpty=True)
-    if userInput == 's': # Allow skipping
-        return
-
-    ros.loginfo('Please make sure both camera viewers are activated and visible without overlap.')
-    ros.loginfo('This program uses screen captures to calibrate the RVIZ streams. The bigger the camera viewers, the more precise the calibration will be.')
-    ros.loginfo('This is also why it is important that the windows do not overlap and are not covered by other windows.')
-
-    checkInput('Done?') # Wait for user input
-
-def findFocusWithName(name:str):
-    """
-    For 3 seconds, check if the active window has the name 'name'
-    """
-
-    # Setup timeout
-    end = ros.Time.now() + ros.Duration(secs=3)
-
-    window = None
-
-    while ros.Time.now() < end: # Wait until timeout
-        window = disp.get_input_focus().focus # Get active window
-        if window.get_wm_name() == 'Camera': # Check name
-            return True, window
-
-    ros.logwarn(f'Was expecting to find a window named "{name}" but found a window named "{window.get_wm_name()}".')
-    return False, window
-        
-        
-
-def findWindows():
-    """
-    Guide the user to find the color and depth windows
-    """
-
-    ros.loginfo('Once you are ready you will have 3 seconds after pressing enter to select the color camera viewer.')
-
-    while True:
-        checkInput('When ready, press enter and select the color camera window and wait for 3 seconds or until the window is found.')
-        
-        res, colorWindow = findFocusWithName('Camera') # Look for color window
-        if res:
-            userInput = checkInput('Found window!', InputOption('c', 'Continue'), InputOption('r', 'Retry'))
-        else:
-            userInput = checkInput('Continue anyway?', InputOption('c', 'Continue'), InputOption('r', 'Retry'),logType=ros.logwarn)
-        if userInput == 'c':
-            break
-        ros.logwarn('Retrying...') # User chose retry
-    
-    ros.loginfo('Once you are ready you will have 3 seconds after pressing enter to select the depth camera viewer.')
-    while True:
-        checkInput('When ready, press enter and select the depth camera window and wait for 3 seconds or until the window is found.')
-
-        res, depthWindow = findFocusWithName('Camera') # Look for depth window
-        if res:
-            userInput = checkInput('Found window!', InputOption('c', 'Continue'), InputOption('r', 'Retry'))
-        else:
-            userInput = checkInput('Continue anyway?', InputOption('c', 'Continue'), InputOption('r', 'Retry'),logType=ros.logwarn)
-        if userInput == 'c':
-            break
-        ros.logwarn('Retrying...') # User chose retry
-    
-    return colorWindow, depthWindow
-
-def isolateCamera(window):
-    """
-    Start from a capture of the entire camera window and isolate the camera with a 16:9 ratio
-    """
-    return getColorStandardizedRect(rvizRemoveBorders(boxFromWindow(window)))
     
 def getScore(x1:float, y1:float, w1:float, h1:float,
              x2:float, y2:float, w2:float, h2:float):
@@ -253,24 +86,7 @@ def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int
         return False
     return res
 
-def sendTransform(x:float, y:float, z:float, bc):
-    """
-    Send the depth transform
-    """
-    tfstamped = TransformStamped()
-    tfstamped.header.stamp = ros.Time.now()
-    tfstamped.header.frame_id = 'camera_link'
-    tfstamped.child_frame_id = 'camera_depth_frame'
-    tfstamped.transform.translation.x = x
-    tfstamped.transform.translation.y = y
-    tfstamped.transform.translation.z = z
-    quat = tf.transformations.quaternion_from_euler(0,0,0)
-    tfstamped.transform.rotation.x = quat[0]
-    tfstamped.transform.rotation.y = quat[1]
-    tfstamped.transform.rotation.z = quat[2]
-    tfstamped.transform.rotation.w = quat[3]
 
-    bc.sendTransform(tfstamped)
 
 def convertBoxToRectInt(box:Dict[str,float]):
     """
@@ -336,7 +152,7 @@ if __name__ == '__main__':
         askRVIZ()
 
         # Make the user locate the proper windows
-        color, depth = findWindows()
+        color, depth = findWindows(disp)
 
         # Initialiaze captures
         colorCap = screenCapture(isolateCamera(color))

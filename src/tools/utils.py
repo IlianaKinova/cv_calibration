@@ -1,10 +1,8 @@
-from math import isclose
-from numbers import Rational
-from typing import Dict, Tuple
 import cv2 as cv
-import Xlib
-from ewmh import EWMH
-import numpy as np
+import rospy as ros
+import tf.transformations
+from geometry_msgs.msg import TransformStamped
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 
 def debugData(im:cv.Mat, height:int, color, **kwargs):
@@ -15,54 +13,74 @@ def debugData(im:cv.Mat, height:int, color, **kwargs):
         text = f'{key}: {val}' # format the keyvalue to <key>: <val>
         cv.putText(im, text, pos, font, scale, color, 2, cv.LINE_AA) # write text to image
 
-def boxFromWindow(window):
-    data = window.get_geometry()
-    return {'top':int(data.y), 'left':int(data.x), 'width':int(data.width), 'height':int(data.height)}
+class InputOption:
+    """
+    Used for checkInput to use as options to display to the user
+    """
+    def __init__(self, optionName:str, optionDesc:str):
+        """
+        optionName: The str to match in the input\n
+        optionDesc: A description of the action
+        """
+        self.name = optionName
+        self.desc = optionDesc
 
-def rvizRemoveBorders(box):
-    titleBorder = 23
-    outsideBorder = 1
-    return {
-        'top':int(box['top'] + titleBorder),
-        'left':int(box['left'] + outsideBorder), 
-        'width':int(box['width'] - (2 * outsideBorder)), 
-        'height':int(box['height'] - (titleBorder + outsideBorder))}
+    def __str__(self):
+        return f'\t({self.name}): {self.desc}'
 
-def aspectRatioCorrectedRect(x:float, y:float, w:float, h:float):
-    ratio = w/h
-    endRatio = 16/9
-    if endRatio > ratio:
-        endw = w
-        endh = w / endRatio
-    else:
-        endw = h * endRatio
-        endh = h
-    endx = x + w/2 - endw/2
-    endy = y + h/2 - endh/2
-    return {'x':endx, 'y':endy, 'w':endw, 'h':endh, 'r':endRatio}
+def checkInput(prompt:object='',*options:InputOption, logType=ros.loginfo, acceptEmpty=None, emptyDesc='Continue'):
+    """
+    Prompts the user to enter an option. It also lists the options.\n
+    Returns the text sent by the user
+    """
 
-def testCase(input:Dict[str,float], expected:Dict[str,float]):
-    expected.update(r=16/9)
-    for (key, val) in input.items():
-        if not isclose(val, expected[key], abs_tol=0.001):
-            print(f'Expected {key} to be {expected[key]}, but found {val}')
-        
+    # Create the option to quit
+    optQuit = InputOption('q', 'Exit the program')
+    p = f'{prompt}'
+    p += f'\n{optQuit}'
 
-def testAspectCorrection():
-    testCase(aspectRatioCorrectedRect(2209,165,706,676), {'x':2209, 'y':304.4375, 'w':706, 'h':397.125})
-    testCase(aspectRatioCorrectedRect(2973,260,662,1000), {'x':2973, 'y':573.8125, 'w':662, 'h':372.375})
+    # Add the additional options
+    for opt in options:
+        p += f'\n{opt}'
 
-def getColorStandardizedRect(box):
-    ratio = float(box['width'])/box['height']
-    if (16.0/9.0) > ratio:
-        width = float(box['width'])
-        height = float(box['width']) / (16.0/9.0)
-    else:
-        width = float(box['height']) * (16.0/9.0)
-        height = float(box['height'])
-    x = box['left'] + float(box['width'])/2.0 - float(width)/2.0
-    y = box['top'] + float(box['height'])/2.0 - float(height)/2.0
-    return {'top':int(round(y)),'left':int(round(x)),'width':int(round(width)),'height':int(round(height))}
+    # If there are no additional options, by default an empty message is valid. However if acceptEmpty is set to False, 
+    # an empty message will fail and prompt the user again
+    if (acceptEmpty is None and len(options) == 0) or acceptEmpty is True:
+        optContinue = InputOption('Press [Enter]', emptyDesc)
+        p += f'\n{optContinue}'
+
+    # Promt the user until a valid option is chosen
+    while True:
+        logType(p)
+        try:
+            c = input()
+        except EOFError: # ctrl+d will end the program
+            raise KeyboardInterrupt()
+        if c == 'q': # End the program
+            raise KeyboardInterrupt()
+        if (acceptEmpty is None and c == '' and len(options) == 0) or acceptEmpty is True: # Manage empty input
+            break
+        if c in [opt.name for opt in options]: # Check if valid option
+            break
+        ros.logerr(f'Invalid option selected: {(c if c != "" else "[Enter]")}') # Notify if invalid option
     
+    return c
 
-    
+def sendTransform(x:float, y:float, z:float, bc:StaticTransformBroadcaster):
+    """
+    Send the depth transform
+    """
+    tfstamped = TransformStamped()
+    tfstamped.header.stamp = ros.Time.now()
+    tfstamped.header.frame_id = 'camera_link'
+    tfstamped.child_frame_id = 'camera_depth_frame'
+    tfstamped.transform.translation.x = x
+    tfstamped.transform.translation.y = y
+    tfstamped.transform.translation.z = z
+    quat = tf.transformations.quaternion_from_euler(0,0,0)
+    tfstamped.transform.rotation.x = quat[0]
+    tfstamped.transform.rotation.y = quat[1]
+    tfstamped.transform.rotation.z = quat[2]
+    tfstamped.transform.rotation.w = quat[3]
+
+    bc.sendTransform(tfstamped)

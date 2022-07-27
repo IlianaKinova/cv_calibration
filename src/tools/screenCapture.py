@@ -1,5 +1,6 @@
 from typing import Dict
 import cv2 as cv
+from mss import mss
 import numpy as np
 from mss.exception import ScreenShotError
 import rospy as ros
@@ -8,10 +9,10 @@ import rospy as ros
 
 class screenCapture:
     def __init__(self, boundingBox:Dict[str,int]):
-        from tools.constants import sct
+        
         self.box = boundingBox
         self.last_img = None
-        self.sct = sct
+        self.sct = mss()
 
     def getImg(self):
         return np.array(self.last_img)
