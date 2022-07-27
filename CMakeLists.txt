@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib_msgs
   kortex_driver
   tf2_ros
+  tf2
   tf2_geometry_msgs
 )
 # find_package(OpenCV REQUIRED)

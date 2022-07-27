@@ -1,6 +1,9 @@
 <launch>
     <arg name="start_delay_seconds" default="0"/>
-
+    <!-- <node pkg="tf2_ros"
+            type="static_transform_publisher"
+            name="camera_color_tf_publisher"
+            args="0 0 0 0 0 0 camera_link camera_color_frame" /> -->
     <node name="rviz_calibration" pkg="cv_calibration" type="rviz_calibration.py" output="screen" launch-prefix="bash -c 'sleep $(arg start_delay_seconds); $0 $@' ">
     </node>
 </launch>

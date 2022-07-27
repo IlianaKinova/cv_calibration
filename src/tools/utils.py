@@ -39,7 +39,6 @@ def aspectRatioCorrectedRect(x:float, y:float, w:float, h:float):
         endh = h
     endx = x + w/2 - endw/2
     endy = y + h/2 - endh/2
-    print(f'Before:{ratio} Ratio: {endw/endh}')
     return {'x':endx, 'y':endy, 'w':endw, 'h':endh, 'r':endRatio}
 
 def testCase(input:Dict[str,float], expected:Dict[str,float]):
@@ -63,7 +62,6 @@ def getColorStandardizedRect(box):
         height = float(box['height'])
     x = box['left'] + float(box['width'])/2.0 - float(width)/2.0
     y = box['top'] + float(box['height'])/2.0 - float(height)/2.0
-    print(f'Before:{ratio} Ratio: {width/height}')
     return {'top':int(round(y)),'left':int(round(x)),'width':int(round(width)),'height':int(round(height))}
     
 
