@@ -454,7 +454,14 @@ class screenImageProcessor:
         for k, arg in self.calibArgs.items():
             arg.update(key)
 
+    def destroyWindows(self):
+        cv.destroyWindow(self.name)
+        cv.destroyWindow(f'{self.name}_filter')
+        cv.destroyWindow(f'{self.name}_canny')
+        self.isInit = False
+
     def processImage(self, input: cv.Mat):
+        self.init()
         if self.method == processingMethod.THRESH_METHOD:
             self.threshMethod(input)
         if self.method == processingMethod.DEPTH_THRESH_METHOD:
