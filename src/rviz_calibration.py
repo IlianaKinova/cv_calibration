@@ -128,18 +128,7 @@ if __name__ == '__main__':
     # Start node
     ros.init_node('rviz_calibration', anonymous=True)
 
-    # Init depth transform publisher
-    tfbc = StaticTransformBroadcaster()
-
-    # Start color transform in parallel
-    uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-    roslaunch.configure_logging(uuid)
-    tracking_launch = roslaunch.parent.ROSLaunchParent(
-        uuid, [str(launch.joinpath('color_tf.launch').resolve())])
-    tracking_launch.start()
-
-    # Send an initial transform to allow rviz to enable the point cloud
-    sendTransform(random()*0.01,random()*0.01,random()*0.01, tfbc)
+    
 
     try:
         # Guide the user
@@ -147,6 +136,19 @@ if __name__ == '__main__':
 
         # Check for the camera driver to be running
         checkTopic('/camera', 'Please start the the ros_kortex_vision driver', 'Found the camera driver')
+
+        # Init depth transform publisher
+        tfbc = StaticTransformBroadcaster()
+
+        # Start color transform in parallel
+        uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
+        roslaunch.configure_logging(uuid)
+        tracking_launch = roslaunch.parent.ROSLaunchParent(
+            uuid, [str(launch.joinpath('color_tf.launch').resolve())])
+        tracking_launch.start()
+
+        # Send an initial transform to allow rviz to enable the point cloud
+        sendTransform(random()*0.01,random()*0.01,random()*0.01, tfbc)
 
         # Guide the user to setup rviz
         askRVIZ()
