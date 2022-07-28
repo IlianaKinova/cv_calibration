@@ -7,11 +7,8 @@ project(cv_calibration)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  message_generation
   rospy
   std_msgs
-  actionlib_msgs
-  kortex_driver
   tf2_ros
   tf2
   tf2_geometry_msgs
@@ -22,12 +19,6 @@ find_package(catkin REQUIRED COMPONENTS
 ################################################
 ## Declare ROS messages, services and actions ##
 ################################################
-
-add_message_files(
-  FILES
-  Rect.msg
-)
-
 
 
 ################################################
@@ -47,7 +38,6 @@ generate_messages(
 )
 
 catkin_package(
-  CATKIN_DEPENDS message_runtime
 )
 
 
@@ -102,9 +92,6 @@ catkin_package(
 #############
 
 catkin_install_python(PROGRAMS 
-  src/calibration_color.py
-  src/calibration_depth.py
-  src/calibration.py
   src/rviz_calibration.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
