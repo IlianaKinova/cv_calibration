@@ -103,13 +103,16 @@ You can also press 'x' to reset the calibration (the offset will update the next
 <a id="md-edgecases" name="edgecases"></a>
 ### Edge cases
 Here are some issues you may run into.
+
 <a id="md-intrusions" name="intrusions"></a>
 #### Intrusions in depth
 <p align="left"> <img alt="Intrusion depth" src="resources/IntrusionDepth.png" title="Intrusion depth"/> </p>
 This can happen if parts of the background are too close to the distance of the calibration shape. Try to clear the area or move the camera elsewhere.
+
 <a id="md-edgekeys" name="edgekeys"></a>
 #### Pressing keys don't change the values / write in the terminal
 If a key is indicated on the terminal, you should write in the terminal. If a key is indicated in a window, then you need to select any of the program's window (excluding the terminal) and press the keys then.
+
 <a id="md-edgecamstop" name="edgecamstop"></a>
 #### Camera streams stop working after a while
 Your computer may be overloaded, try decreasing the fps on RViz or closing some apps that may be intensive on your cpu.
