@@ -77,6 +77,7 @@ Then it will ask you to open the config file found in the rviz directory of the 
 Once open, you can setup your windows.
 Activate both camera viewers and find the one that contains the depth data. It will most likely look something like this:
 <p align="left"> <img alt="Non configured depth" src="resources/NonConfiguredDepth.png" title="Non configured depth"/> </p>
+
 Now, go to the DepthCloud properties and under Autocompute Value Bounds, tweak with the values until you get something a little more like this:
 ![Configured depth](https://github.com/IlianaKinova/cv_calibration/blob/master/resources/ConfiguredDepth.png)
 In the current case, a min value of 0.76 and a max value of 2 were used.
