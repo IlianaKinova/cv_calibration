@@ -1,11 +1,11 @@
 OUTPUT VALUES
-x y z: 0 0 0
+x y z: 0.0160512 -0.0052608 0
 
 PARAMETERS
 
 COLOR
-thresh: 180
+thresh: 225
 
 DEPTH
-thresh: 102
+thresh: 116
 erode: 10
