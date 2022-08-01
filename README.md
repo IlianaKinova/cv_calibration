@@ -84,6 +84,7 @@ In the current case, a min value of 0.76 and a max value of 2 were used.
 
 Next, put the windows side by side like so:
 <p align="left"> <img alt="Both windows" src="resources/BothWindows.png" title="Both windows"/> </p>
+
 Now you can continue to teach the program what windows to capture.
 Press enter (in the terminal) until you see a message asking you to select the color camera viewer. Press enter and click on the color camera viewer. Go back to the terminal and do it once more for the depth camera viewer.
 
@@ -111,6 +112,7 @@ Here are some issues you may run into.
 <a id="md-intrusions" name="intrusions"></a>
 #### Intrusions in depth
 <p align="left"> <img alt="Intrusion depth" src="resources/IntrusionDepth.png" title="Intrusion depth"/> </p>
+
 This can happen if parts of the background are too close to the distance of the calibration shape. Try to clear the area or move the camera elsewhere.
 <a id="md-edgekeys" name="edgekeys"></a>
 #### Pressing keys don't change the values / write in the terminal

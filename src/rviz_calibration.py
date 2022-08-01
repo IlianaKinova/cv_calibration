@@ -118,7 +118,7 @@ def saveData():
         
 def afterCalibration():
     """
-    Code 
+    Code to run after calibration is stopped
     """
     ros.loginfo(f'Saving values to: {resources.joinpath("Results.txt").resolve()}')
     saveData()
@@ -161,7 +161,7 @@ if __name__ == '__main__':
         depthCap = screenCapture(isolateCamera(depth))
 
         # Initialize the processors
-        colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD, thresh=adjustParam(190, ord('w'), ord('s'), 5, (0,255)))
+        colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD, thresh=adjustParam(100, ord('w'), ord('s'), 5, (0,255)))
         depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.THRESH_ERODE_METHOD,
             thresh=adjustParam(102, ord('e'), ord('d'), 1, (0,255)),
             erode=adjustParam(10, ord('r'), ord('f'), 1, (0, 100)))
