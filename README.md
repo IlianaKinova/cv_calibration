@@ -33,7 +33,7 @@ You will need:
 As mentionned, this setup does not need to be fancy. The setup used for testing this program was made of a heavy base plate, two clamps, a cardboard square (any rectangular shape will do) covered with a white paper sheet, and some tape to hold everything together.
 
 ## Installation
-This guide assumes you have already used and built the [ros_kortex](https://github.com/Kinovarobotics/ros_kortex) library. This means you need to install ROS and make a catkin workspace.
+This guide assumes you have already used and built the [ros_kortex_vision](https://github.com/Kinovarobotics/ros_kortex_vision) library. This means you need to install ROS and make a catkin workspace. If you haven't done so already, go to the ros_kortex_vision repo and follow the installation steps, and then come back here.
 
 ### Build
 These are the steps to build the project:
@@ -77,11 +77,14 @@ Then it will ask you to open the config file found in the rviz directory of the 
 Once open, you can setup your windows.
 Activate both camera viewers and find the one that contains the depth data. It will most likely look something like this:
 <p align="left"> <img alt="Non configured depth" src="resources/NonConfiguredDepth.png" title="Non configured depth"/> </p>
-Now, go to the DepthCloud properties and under Autocompute Value Bounds, tweak with the values until you get something a little more like this:
+
+Now, go to the DepthCloud properties and under Autocompute Value Bounds, tweak with the min and max values until you get something a little more like this:
 <p align="left"> <img alt="Configured depth" src="resources/ConfiguredDepth.png" title="Configured depth"/> </p>
 In the current case, a min value of 0.76 and a max value of 2 were used.
+
 Next, put the windows side by side like so:
 <p align="left"> <img alt="Both windows" src="resources/BothWindows.png" title="Both windows"/> </p>
+
 Now you can continue to teach the program what windows to capture.
 Press enter (in the terminal) until you see a message asking you to select the color camera viewer. Press enter and click on the color camera viewer. Go back to the terminal and do it once more for the depth camera viewer.
 
@@ -89,11 +92,14 @@ Press enter (in the terminal) until you see a message asking you to select the c
 #### Configuring streams
 Now a few windows will open. It may seem overwhelming at first but start by locating the window called "color". You will notice on the top left, that it says `thresh: Up:'w' Down:'s'`. This is to adjust the threshold of the filter. Locate the window called "color_filter" and use the 'w' and 's' keys to adjust the threshold until you see a well defined square. You can validate if it is good enough by looking at the "color" window and checking if the light blue circles align with the rectangular shape like so:
 <p align="left"> <img alt="AlignedColor" src="resources/AlignedColor.png" title="AlignedColor"/> </p>
+
 Now you can locate the window called "depth". You will notice that it says you can use the 'e' and 's' keys to adjust the threshold. Just like with the color window, locate the window named "depth_filter" and adjust the threshold until you see a clean shape. Ideally all would be white except the shape. In the case where there are some smaller spots remaining, there is another parameter. You may have noticed the "depth" window also has a parameter called "erode". You can control it using 'r' and 'f' and this will get rid of smaller spots. You can look at the window named "depth_canny" to see the result. If you go back to the "depth" window, you should see that just like the color window, there are circles that indicate the corners of the shape. It should look something like this:
 <p align="left"> <img alt="AlignedDepth" src="resources/AlignedDepth.png" title="AlignedDepth"/> </p>
+
 Now you are ready to calibrate the streams. Locate the window called "Debug". Here you will see debug information. The xOffset and yOffset fields describe the relative offset from the middle of both of the rectangles found by the edge detection. Anything below 0.005 is good enough.
 To start calibrating, press and hold 'c'. You will start to see the depth stream moving as it attempts to correct the offsets. Wait until you are satisfied with the calibration (you can stop at any time and continue later). You can see a preview in rviz using the PointCloud2. In the end, it should look something like this:
 <p align="left"> <img alt="Calibrated" src="resources/Calibrated.png" title="Calibrated"/> </p>
+
 <a id="md-save" name="save"></a>
 #### Saving the values
 At this point you can select the debug window and press 'z'. This will save the values in the Result.txt file located in `cv_calibration/resources`. The x y z values are what need to be put in the kortex vision launch file
@@ -103,16 +109,14 @@ You can also press 'x' to reset the calibration (the offset will update the next
 <a id="md-edgecases" name="edgecases"></a>
 ### Edge cases
 Here are some issues you may run into.
-
 <a id="md-intrusions" name="intrusions"></a>
 #### Intrusions in depth
 <p align="left"> <img alt="Intrusion depth" src="resources/IntrusionDepth.png" title="Intrusion depth"/> </p>
-This can happen if parts of the background are too close to the distance of the calibration shape. Try to clear the area or move the camera elsewhere.
 
+This can happen if parts of the background are too close to the distance of the calibration shape. Try to clear the area or move the camera elsewhere.
 <a id="md-edgekeys" name="edgekeys"></a>
 #### Pressing keys don't change the values / write in the terminal
 If a key is indicated on the terminal, you should write in the terminal. If a key is indicated in a window, then you need to select any of the program's window (excluding the terminal) and press the keys then.
-
 <a id="md-edgecamstop" name="edgecamstop"></a>
 #### Camera streams stop working after a while
-Your computer may be overloaded, try decreasing the fps on RViz or closing some apps that may be intensive on your cpu.
+Your computer may be overloaded, try decreasing the fps on RViz or closing some apps that may be intensive on your cpu. You could also stop the PointCloud2 component in RViz.
