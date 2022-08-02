@@ -1,10 +1,13 @@
 import enum
 from numbers import Number
-from typing import Any, Tuple
+import random
+from typing import Any, Iterable, List, Tuple, Union
 
 import cv2 as cv
 import numpy as np
 from tools.utils import debugData
+from tools.ValueFilter import ValueFilter
+import rospy as ros
 
 class rectFloat:
     def __init__(self):
@@ -13,7 +16,7 @@ class rectFloat:
         self.w = float(0)
         self.h = float(0)
 
-    def toAbsolute(self, screenSize:'Tuple[int,int]'):
+    def toAbsolute(self, screenSize:Tuple[int,int]):
         res = rectInt()
         res.x = int(self.x * screenSize[0])
         res.w = int(self.w * screenSize[0])
@@ -22,18 +25,34 @@ class rectFloat:
         return res
 
 class rectInt:
-    def __init__(self, obj:Any=None):
+    def __init__(self, obj:Union[Tuple[int,int,int,int],List[int],Any]=None, x:int=None, y:int=None, w:int=None, h:int=None):
         self.x = int(0)
         self.y = int(0)
         self.w = int(0)
         self.h = int(0)
         if obj is not None:
-            self.x = int(obj.x)
-            self.y = int(obj.y)
-            self.w = int(obj.w)
-            self.h = int(obj.h)
+            if hasattr(obj, 'x') and hasattr(obj, 'y') and hasattr(obj, 'w') and hasattr(obj, 'h'):
+                self.x = int(obj.x)
+                self.y = int(obj.y)
+                self.w = int(obj.w)
+                self.h = int(obj.h)
+                return
+            if hasattr(obj, '__getitem__') and len(obj) >= 4:
+                self.x = obj[0]
+                self.y = obj[1]
+                self.w = obj[2]
+                self.h = obj[3]
+                return
+        if x is not None:
+            self.x = x
+        if y is not None:
+            self.y = y
+        if w is not None:
+            self.w = w
+        if h is not None:
+            self.h = h
 
-    def toRelative(self, screenSize:'Tuple[int,int]'):
+    def toRelative(self, screenSize:Tuple[int,int]):
         res = rectFloat()
         res.x = float(self.x) / screenSize[0]
         res.w = float(self.w) / screenSize[0]
@@ -95,6 +114,7 @@ class screenImageProcessor:
         self.calibArgs = kwargs
         self.encoding = encoding
         self.isInit = False
+        self.filter = ValueFilter(2, 1, 10, 4)
 
     def init(self):
         if not self.isInit:
@@ -102,6 +122,48 @@ class screenImageProcessor:
             cv.namedWindow(f'{self.name}_canny', cv.WINDOW_AUTOSIZE)
             cv.namedWindow(f'{self.name}_filter', cv.WINDOW_AUTOSIZE)
             self.isInit = True
+
+    def findBoundingBoxes(self, canny:cv.Mat):
+        cnts = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[-2:]
+        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+        for c in cnts:
+            x, y, w, h = cv.boundingRect(c)
+            yield rectInt(x=x, y=y, w=w, h=h)
+
+    def findBiggestBox(self, boxes:Iterable[rectInt]):
+        x, y, w, h = (0,0,0,0)
+        area = 0
+        for xx, yy, ww, hh in ((rect.x, rect.y, rect.w, rect.h) for rect in boxes):
+            if ww * hh > area:
+                if area != 0: # Don't yield a 0,0,0,0 box
+                    # Yield the previously biggest box since it was never yielded
+                    yield rectInt(x=x, y=y, w=w, h=h)
+
+                x = xx
+                y = yy
+                w = ww
+                h = hh
+                area = w * h
+                # To avoid yielding the biggest box multiple times, we don't yield here
+            else: # Yield every box that isn't the biggest
+                yield rectInt(x=xx, y=yy, w=ww, h=hh) # Yield to streamline the process only iterating through once
+        yield rectInt(x=x, y=y, w=w, h=h) # Last is the result
+        
+            
+    def filterMinMaxSize(self, boxes:Iterable[rectInt], minCoverage:float, maxCoverage:float, screenArea:int):
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in boxes):
+            coverage = (w * h) / screenArea
+            if minCoverage < coverage and coverage < maxCoverage:
+                yield rectInt(x=x, y=y, w=w, h=h) # Yield to streamline the process only iterating through once
+
+    def findFillRatio(self, box:rectInt, thresh:cv.Mat):
+        return 1.0 - (np.average(thresh[box.y:box.y+box.h, box.x:box.x+box.w]) / 255)
+
+    def filterThreshFillRatio(self, boxes:Iterable[rectInt], thresh:cv.Mat, minFilling:float=0.9):
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in boxes):
+            if self.findFillRatio(rectInt((x,y,w,h)), thresh) > minFilling:
+                yield rectInt(x=x, y=y, w=w, h=h)
+
 
     def threshMethod(self, img:cv.Mat, ignoreBlack:bool = False):
         threshVal = self.calibArgs['thresh'].value
@@ -120,28 +182,42 @@ class screenImageProcessor:
         cv.imshow(f'{self.name}_canny', canny)
 
         # Find contours
-        cnts = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[-2:]
-        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-        x=0
-        y=0
-        w=0
-        h=0
-        for c in cnts:
-            x, y, w, h = cv.boundingRect(c)
+        boxes = self.findBoundingBoxes(canny)
+        sized = self.filterMinMaxSize(boxes, 0.05, 0.5, img.shape[0]*img.shape[1])
+        filled = self.filterThreshFillRatio(sized, thresh)
+        biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
+        # This is so that the entire process stays in generators so that iteration happens only once
 
-        # My coordinates
-        try:
-            cv.circle(img,(x,y),        10, (255,255,0), 5)
-            cv.circle(img,(x+w,y),      10, (255,255,0), 5)
-            cv.circle(img,(x+w,y+h),    10, (255,255,0), 5)
-            cv.circle(img,(x,y+h),      10, (255,255,0), 5)
-        except (UnboundLocalError):
-            pass
-        debugData(img, 20, (255,0,0), Threshold=str(threshVal),
+        # Draw all boxes
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in biggest):
+            color = (random.randrange(0, 255), random.randrange(0, 255), 127)
+            cv.rectangle(img, (x,y), (x+w, y+h), color, 1)
+            cv.circle(img,(x+w,y),      5, color, 1)
+            cv.circle(img,(x,y),        5, color, 1)
+            cv.circle(img,(x+w,y+h),    5, color, 1)
+            cv.circle(img,(x,y+h),      5, color, 1)
+
+        # Filter values
+        ros.loginfo_throttle(1, f'Before {x}')
+        self.filter.write(x, y, w, h)
+        x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
+        ros.loginfo_throttle(1, f'After {x}')
+        fillPercent = self.findFillRatio(rectInt((x,y,w,h)), thresh)
+
+        # Last box is biggest
+        cv.rectangle(img, (x,y), (x+w, y+h), (255,255,0), 2)
+        cv.circle(img,(x,y),        10, (255,255,0), 5)
+        cv.circle(img,(x+w,y),      10, (255,255,0), 5)
+        cv.circle(img,(x+w,y+h),    10, (255,255,0), 5)
+        cv.circle(img,(x,y+h),      10, (255,255,0), 5)
+
+
+        debugData(img, 20, (255,0,0),
             TopLeft=    (x,y),
             TopRight=   (x+w,y),
             BottomRight=(x+w,y+h),
             BottomLeft= (x,y+h),
+            FillPercent=fillPercent,
             **self.calibArgs)
         self.rect.x = x
         self.rect.y = y
