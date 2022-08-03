@@ -128,4 +128,4 @@ Make sure your shape is well oriented with the camera. One of the ways to filter
 
 <a id="md-patch-notes" name="patch-notes"></a>
 ## Patch notes
-- Improved the edge detection filtering significantly.
+- V1.1.0: Improved the edge detection filtering significantly.
