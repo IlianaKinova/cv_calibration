@@ -162,9 +162,11 @@ if __name__ == '__main__':
 
         # Initialize the processors
         colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD, thresh=adjustParam(100, ord('w'), ord('s'), 5, (0,255)))
-        depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.THRESH_ERODE_METHOD,
+        depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.DEPTH_THRESH_METHOD,
             thresh=adjustParam(102, ord('e'), ord('d'), 1, (0,255)),
             erode=adjustParam(10, ord('r'), ord('f'), 1, (0, 100)))
+
+        colorProcessor.testMargined()
 
         # Initialize the screen capture thingy
         sct = mss()
