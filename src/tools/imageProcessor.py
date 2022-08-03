@@ -1,4 +1,5 @@
 import enum
+from math import sqrt
 from numbers import Number
 import random
 from typing import Any, Iterable, List, Tuple, Union
@@ -115,6 +116,7 @@ class screenImageProcessor:
         self.encoding = encoding
         self.isInit = False
         self.filter = ValueFilter(2, 1, 10, 4)
+        self.depthRange = (255, 0)
 
     def init(self):
         if not self.isInit:
@@ -173,8 +175,40 @@ class screenImageProcessor:
             if (relativeMargin < relRect.x) and (relRect.x + relRect.w < 1.0 - relativeMargin) and (relativeMargin < relRect.y) and (relRect.y + relRect.h < 1.0 - relativeMargin):
                 yield rect
 
-    def distanceToMid(self, box:rectInt, screenSize:Tuple[int,int]):
-        return np.linalg.norm(np.array[box.x + box.w/2, box.y + box.h/2] - np.array(screenSize)/2)
+    def relDistanceToMid(self, box:rectInt, screenSize:Tuple[int,int]):
+        relBox = box.toRelative((screenSize[1],screenSize[0]))
+        return np.linalg.norm(np.array([relBox.x + 0.5, relBox.y + 0.5]) - np.array([0.5,0.5]))
+
+    def calcDistSizeScore(self, relDist:float, relSize:float, ratio:float):
+        """
+        ratio is the ratio of impact of size compared to distance.
+        A ratio of 1 means that the distance is ignored.
+        If 0.8 is used, then the size will have an impact of 0.8 and the distance will have an impact of 0.2
+        """
+        return relSize * ratio + (1.0 - ratio) * (1 - relDist / sqrt(2))
+
+    def findBestScore(self, boxes:Iterable[rectInt], ratio:float, screenSize:Tuple[int,int]):
+        x, y, w, h = (0,0,0,0)
+        score = 0
+        for xx, yy, ww, hh, rect in ((rect.x, rect.y, rect.w, rect.h, rect) for rect in boxes):
+            area = (ww * hh) / (screenSize[0]*screenSize[1])
+            dist = self.relDistanceToMid(rect, screenSize)
+            s = self.calcDistSizeScore(dist, area, ratio)
+
+            if s > score:
+                if x==0 and y==0 and w==0 and h==0: # Don't yield a 0,0,0,0 box
+                    # Yield the previously best box since it was never yielded
+                    yield rectInt(x=x, y=y, w=w, h=h)
+
+                x = xx
+                y = yy
+                w = ww
+                h = hh
+                score = w * h
+                # To avoid yielding the best box multiple times, we don't yield here
+            else: # Yield every box that isn't the best
+                yield rectInt(x=xx, y=yy, w=ww, h=hh) # Yield to streamline the process only iterating through once
+        yield rectInt(x=x, y=y, w=w, h=h) # Last is the result
 
     def threshMethod(self, img:cv.Mat, ignoreBlack:bool = False):
         threshVal = self.calibArgs['thresh'].value
@@ -197,11 +231,12 @@ class screenImageProcessor:
         sized = self.filterMinMaxSize(boxes, 0.05, 0.45, img.shape[0]*img.shape[1])
         margined = self.filterMargin(sized, 0.05, img.shape[1], img.shape[0])
         filled = self.filterThreshFillRatio(margined, thresh, 0.9, False)
-        biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
+        # biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
+        best = self.findBestScore(filled, 0.5, img.shape)
         # This is so that the entire process stays in generators so that iteration happens only once
 
         # Draw all boxes
-        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in biggest):
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in best):
             color = (random.randrange(0, 255), random.randrange(0, 255), 127)
             cv.rectangle(img, (x,y), (x+w, y+h), color, 1)
             cv.circle(img,(x+w,y),      5, color, 1)
@@ -209,15 +244,27 @@ class screenImageProcessor:
             cv.circle(img,(x+w,y+h),    5, color, 1)
             cv.circle(img,(x,y+h),      5, color, 1)
 
+        fillPercent=0
+
         # Filter values
         if x==0 and y==0 and w==0 and h==0:
+            # Show last box
+            x = self.rect.x
+            y = self.rect.y
+            w = self.rect.w
+            h = self.rect.h
+            cv.rectangle(img, (x,y), (x+w, y+h),    (0,255,255), 2)
+            cv.circle(img,(x,y),        10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y),      10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y+h),    10,         (0,255,255), 5)
+            cv.circle(img,(x,y+h),      10,         (0,255,255), 5)
             ros.logwarn('Bad read')
         else:
             self.filter.write(x, y, w, h)
             x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
             fillPercent = self.findFillRatio(rectInt((x,y,w,h)), thresh, True)
 
-            # Last box is biggest
+            # Last box is best match
             cv.rectangle(img, (x,y), (x+w, y+h), (255,255,0), 2)
             cv.circle(img,(x,y),        10, (255,255,0), 5)
             cv.circle(img,(x+w,y),      10, (255,255,0), 5)
@@ -250,7 +297,8 @@ class screenImageProcessor:
         hue = np.zeros((img.shape[0],img.shape[1]), np.uint8)
         hue[:,:] = hsv[:,:,0]
 
-        img8 = scale(hue, hue.min(),hue.max(), 0, 255).astype('uint8')
+        # img8 = scale(hue, hue.min(),hue.max(), 0, 255).astype('uint8')
+        img8 = hue.astype('uint8')
         _, thresh = cv.threshold(img8,threshVal,255,cv.THRESH_BINARY_INV)
         cv.imshow(f'{self.name}_filter', thresh)
 
@@ -263,11 +311,13 @@ class screenImageProcessor:
         sized = self.filterMinMaxSize(boxes, 0.05, 0.45, img.shape[0]*img.shape[1])
         margined = self.filterMargin(sized, 0.05, img.shape[1], img.shape[0])
         filled = self.filterThreshFillRatio(margined, thresh, 0.9, True)
-        biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
+        # biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
+        best = self.findBestScore(filled, 0.5, img.shape)
+
         # This is so that the entire process stays in generators so that iteration happens only once
 
         # Draw all boxes
-        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in biggest):
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in best):
             color = (random.randrange(0, 255), random.randrange(0, 255), 127)
             cv.rectangle(img, (x,y), (x+w, y+h), color, 1)
             cv.circle(img,(x+w,y),      5, color, 1)
@@ -275,15 +325,27 @@ class screenImageProcessor:
             cv.circle(img,(x+w,y+h),    5, color, 1)
             cv.circle(img,(x,y+h),      5, color, 1)
 
+        fillPercent=0
+
         # Filter values
         if x==0 and y==0 and w==0 and h==0:
+            # Show last box
+            x = self.rect.x
+            y = self.rect.y
+            w = self.rect.w
+            h = self.rect.h
+            cv.rectangle(img, (x,y), (x+w, y+h),    (0,255,255), 2)
+            cv.circle(img,(x,y),        10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y),      10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y+h),    10,         (0,255,255), 5)
+            cv.circle(img,(x,y+h),      10,         (0,255,255), 5)
             ros.logwarn('Bad read')
         else:
             self.filter.write(x, y, w, h)
             x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
             fillPercent = self.findFillRatio(rectInt((x,y,w,h)), thresh, True)
 
-            # Last box is biggest
+            # Last box is best match
             cv.rectangle(img, (x,y), (x+w, y+h), (255,255,0), 2)
             cv.circle(img,(x,y),        10, (255,255,0), 5)
             cv.circle(img,(x+w,y),      10, (255,255,0), 5)
@@ -293,15 +355,15 @@ class screenImageProcessor:
             self.rect.y = y
             self.rect.w = w
             self.rect.h = h
-
-        debugData(img, 20, (255,0,0), Threshold=str(threshVal),
+        
+        debugData(img, 20, (255,0,0),
             TopLeft=    (x,y),
             TopRight=   (x+w,y),
             BottomRight=(x+w,y+h),
             BottomLeft= (x,y+h),
             FillPercent=fillPercent,
             **self.calibArgs)
-        
+
         cv.imshow(self.name,img)
 
     def updateKeyPress(self, key:int):
