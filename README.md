@@ -21,6 +21,8 @@ This was meant as a solution for [Issue #1](https://github.com/Kinovarobotics/ro
             - [Intrusions in depth](#intrusions)
             - [Pressing keys don’t change the values / write in the terminal](#edgekeys)
             - [Camera streams stop working after a while](edgecamstop)
+            - [The square is never detected](#edgesquare)
+- [Patch notes](#patch-notes)            
 
 
 ## Requirements
@@ -90,10 +92,10 @@ Press enter (in the terminal) until you see a message asking you to select the c
 
 <a id="md-conf-streams" name="conf-streams"></a>
 #### Configuring streams
-Now a few windows will open. It may seem overwhelming at first but start by locating the window called "color". You will notice on the top left, that it says `thresh: Up:'w' Down:'s'`. This is to adjust the threshold of the filter. Locate the window called "color_filter" and use the 'w' and 's' keys to adjust the threshold until you see a well defined square. You can validate if it is good enough by looking at the "color" window and checking if the light blue circles align with the rectangular shape like so:
+Now a few windows will open. It may seem overwhelming at first but start by locating the window called "color". You will notice on the top left, that it says `thresh: Up:'w' Down:'s'`. This is to adjust the threshold of the filter. If the light blue square does not show or is not finding the calibration object, locate the window called "color_filter" and use the 'w' and 's' keys to adjust the threshold until you see a well defined shape. You can validate if it is good enough by looking at the "color" window and checking if the light blue circles align with the rectangular shape like so:
 <p align="left"> <img alt="AlignedColor" src="resources/AlignedColor.png" title="AlignedColor"/> </p>
 
-Now you can locate the window called "depth". You will notice that it says you can use the 'e' and 's' keys to adjust the threshold. Just like with the color window, locate the window named "depth_filter" and adjust the threshold until you see a clean shape. Ideally all would be white except the shape. In the case where there are some smaller spots remaining, there is another parameter. You may have noticed the "depth" window also has a parameter called "erode". You can control it using 'r' and 'f' and this will get rid of smaller spots. You can look at the window named "depth_canny" to see the result. If you go back to the "depth" window, you should see that just like the color window, there are circles that indicate the corners of the shape. It should look something like this:
+Now you can locate the window called "depth". You will notice that it says you can use the 'e' and 's' keys to adjust the threshold. Just like with the color window, locate the window named "depth_filter" and adjust the threshold until you see a clean shape. The filtering of the edge detection should be pretty good at ignoring intrusions. In the end, it should look something like this:
 <p align="left"> <img alt="AlignedDepth" src="resources/AlignedDepth.png" title="AlignedDepth"/> </p>
 
 Now you are ready to calibrate the streams. Locate the window called "Debug". Here you will see debug information. The xOffset and yOffset fields describe the relative offset from the middle of both of the rectangles found by the edge detection. Anything below 0.005 is good enough.
@@ -113,10 +115,17 @@ Here are some issues you may run into.
 #### Intrusions in depth
 <p align="left"> <img alt="Intrusion depth" src="resources/IntrusionDepth.png" title="Intrusion depth"/> </p>
 
-This can happen if parts of the background are too close to the distance of the calibration shape. Try to clear the area or move the camera elsewhere.
+This should now be way easier to fix and should almost never occur anymore, if it does, try moving your calibration object so it is centered in the frame. Otherwise, try to clear the area or move the camera elsewhere.
 <a id="md-edgekeys" name="edgekeys"></a>
 #### Pressing keys don't change the values / write in the terminal
 If a key is indicated on the terminal, you should write in the terminal. If a key is indicated in a window, then you need to select any of the program's window (excluding the terminal) and press the keys then.
 <a id="md-edgecamstop" name="edgecamstop"></a>
 #### Camera streams stop working after a while
 Your computer may be overloaded, try decreasing the fps on RViz or closing some apps that may be intensive on your cpu. You could also stop the PointCloud2 component in RViz.
+<a id="md-edgesquare" name="edgesquare"></a>
+#### The square is never detected
+Make sure your shape is well oriented with the camera. One of the ways to filter the shapes is to find out how much of the bounding box covers the actual ite, if the shape is angled, the there will be some uncovered areas in the corners of the bounding box.
+
+<a id="md-patch-notes" name="patch-notes"></a>
+## Patch notes
+- Improved the edge detection filtering significantly.
