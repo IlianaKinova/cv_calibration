@@ -5,23 +5,32 @@ def boxFromWindow(window):
 def rvizRemoveBorders(box):
     titleBorder = 23
     outsideBorder = 1
-    return {
-        'top':int(box['top'] + titleBorder),
-        'left':int(box['left'] + outsideBorder), 
-        'width':int(box['width'] - (2 * outsideBorder)), 
-        'height':int(box['height'] - (titleBorder + outsideBorder))}
+    box['top'] += titleBorder
+    box['left'] += outsideBorder
+    box['width'] -= 2*outsideBorder # remove left and right border from width
+    box['height'] -= titleBorder + outsideBorder # remove top and bottom border from width
+    return box
 
 def getColorStandardizedRect(box):
     ratio = float(box['width'])/box['height']
-    if (16.0/9.0) > ratio:
-        width = float(box['width'])
-        height = float(box['width']) / (16.0/9.0)
+    standard_ratio = 16.0/9.0
+
+    if standard_ratio > ratio:
+        new_width = float(box['width'])
+        new_height = float(box['width']) / standard_ratio
     else:
-        width = float(box['height']) * (16.0/9.0)
-        height = float(box['height'])
-    x = box['left'] + float(box['width'])/2.0 - float(width)/2.0
-    y = box['top'] + float(box['height'])/2.0 - float(height)/2.0
-    return {'top':int(round(y)),'left':int(round(x)),'width':int(round(width)),'height':int(round(height))}
+        new_width = float(box['height']) * standard_ratio
+        new_height = float(box['height'])
+    
+    new_top = box['top'] + float(box['height'])/2.0 - float(new_height)/2.0
+    new_left = box['left'] + float(box['width'])/2.0 - float(new_width)/2.0
+
+    box['top']    = round(new_top)
+    box['left']   = round(new_left)
+    box['width']  = round(new_width)
+    box['height'] = round(new_height)
+
+    return box
 
 def isolateCamera(window):
     """

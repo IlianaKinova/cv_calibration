@@ -40,10 +40,6 @@ class rectInt:
         res.y = float(self.y) / screenSize[1]
         res.h = float(self.h) / screenSize[1]
         return res
-        
-
-class Rect(rectInt):
-    pass
 
 class processingMethod(enum.Enum):
     THRESH_METHOD = 0
