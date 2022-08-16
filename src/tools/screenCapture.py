@@ -19,6 +19,7 @@ class screenCapture:
 
     def capture(self):
         try:
+            
             self.last_img = self.sct.grab(self.box)
         except ScreenShotError as e:
             ros.logerr_throttle(500, f"Couldn't perform capture: {e}")

@@ -25,9 +25,8 @@ def calibrate(xScore:float, yScore:float, xCalibrate:Calibrator, yCalibrate:Cali
     """
     Compute the calibrators
     """
-    resx = xCalibrate.compute(xScore)
-    resy = yCalibrate.compute(yScore)
-    return resx and resy
+    xCalibrate.compute(xScore)
+    yCalibrate.compute(yScore)
 
 def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int], depthSize:Tuple[int,int], calib:bool, vFilter:ValueFilter, xCalibrate:Calibrator, yCalibrate:Calibrator):
     """
@@ -46,10 +45,7 @@ def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int
     xScore, yScore = vFilter.value
 
     if calib: # Calibrate
-        res = calibrate(xScore, yScore, xCalibrate, yCalibrate)
-    else:
-        return False
-    return res
+        calibrate(xScore, yScore, xCalibrate, yCalibrate)
 
 
 
@@ -192,7 +188,7 @@ if __name__ == '__main__':
                 # Adjust transform
                 sendTransform(xCalibrate.output, yCalibrate.output, 0, tfbc)
                 # ros.loginfo_throttle(2000, 'Calibration complete!')
-            isCalibrated = runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate, vFilter, xCalibrate, yCalibrate)
+            runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate, vFilter, xCalibrate, yCalibrate)
 
             if (keyPressed & 0xFF) == ord('x'):
                 xCalibrate.reset()
