@@ -93,43 +93,6 @@ class adjustParam:
     def __str__(self):
         return f'Up:`{chr(self.increaseKey)}` Down:`{chr(self.decreaseKey)}` Value:{self.value}'
 
-# class filterParam:
-#     def __init__(self, init, min, max):
-#         self.init = self._value = init
-#         self.min = min
-#         self.max = max
-
-#     @property
-#     def value(self):
-#         return self._value
-
-#     @value.setter()
-#     def value(self, val):
-#         self._value = min(self.max, max(self.min, self._value))
-
-#     def reset(self):
-#         self._value = self.init
-
-# class filterParamOptimizer:
-#     def __init__(self, param:filterParam, scoreProvider:Callable):
-#         self.param = param
-#         self.scoreProvider = scoreProvider
-
-#     def optimize(self):
-#         return False
-
-#     def reset(self):
-#         self.param.reset()
-
-# class colorThreshParamOptimizer(filterParamOptimizer):
-#     def __init__(self, scoreProvider:Callable):
-#         super().__init__(self, filterParam(0, 0, 255), scoreProvider)
-        
-#     def optimize(self):
-#         [r for i in range(0, 255):
-#             self.param.value = i
-#             r = self.scoreProvider()]
-
 class screenImageProcessor:
     def __init__(self,name:str, encoding:str, method:processingMethod, **kwargs:adjustParam):
         """
