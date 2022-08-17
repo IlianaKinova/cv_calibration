@@ -132,10 +132,9 @@ if __name__ == '__main__':
 
         # Initialize the processors
         colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD,
-            thresh=adjustParam(200, ord('w'), ord('s'), 1, (0,255)),
-            threshInterval=adjustParam(20, ord('e'), ord('d'), 1, (1,50)))
+            thresh=adjustParam(200, ord('w'), ord('s'), 1, (0,255)))
         depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.DEPTH_THRESH_METHOD,
-            thresh=adjustParam(102, ord('r'), ord('f'), 1, (1,255)))
+            thresh=adjustParam(102, ord('e'), ord('d'), 1, (1,255)))
 
         # Make a debug window
         cv.namedWindow('Debug', cv.WINDOW_AUTOSIZE)

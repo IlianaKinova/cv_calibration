@@ -64,9 +64,6 @@ class rectInt:
 class processingMethod(enum.Enum):
     THRESH_METHOD = 0
     DEPTH_THRESH_METHOD = 1
-    DEPTH_BLOB_FINDER = 2
-    THRESH_IGNORE_BLACK_METHOD = 3
-    THRESH_ERODE_METHOD = 4
 
 class adjustParam:
     def __init__(self, initVal: Number, increaseKey:int, decreaseKey:int, step:Number = 5, range:Tuple[Number,Number]=None):
@@ -95,15 +92,7 @@ class screenImageProcessor:
         For method == calibrationMethod.THRESH_METHOD, args:\n
             -thresh\n
         For method == calibrationMethod.DEPTH_THRESH_METHOD, args:\n
-            -threshMin\n
-            -threshMax\n
-            -xMin\n
-            -xMax\n
-            -yMin\n
-            -yMax\n
-            -cannyMin\n
-            -cannyMax\n
-            -blurSize\n
+            -thresh\n
         """
         self.name = name
         self.rect = rectInt()
@@ -218,7 +207,6 @@ class screenImageProcessor:
 
     def threshMethod(self, img:cv.Mat):
         threshVal = self.calibArgs['thresh'].value
-        threshIntervalVal = self.calibArgs['threshInterval'].value
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
         _, thresh = cv.threshold(gray, threshVal, 255, cv.THRESH_BINARY_INV)
@@ -377,5 +365,3 @@ class screenImageProcessor:
             self.threshMethod(input)
         if self.method == processingMethod.DEPTH_THRESH_METHOD:
             self.depthThreshMethod(input)
-        if self.method == processingMethod.THRESH_IGNORE_BLACK_METHOD:
-            self.threshMethod(input, True)
