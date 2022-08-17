@@ -247,8 +247,8 @@ class screenImageProcessor:
             cv.circle(img,(x,y+h),      10,         (0,255,255), 5)
             ros.logwarn('Bad read')
         else:
-            self.filter.write(x, y, w, h)
-            x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
+            # self.filter.write(x, y, w, h)
+            # x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
             fillPercent = self.findFillRatio(rectInt((x,y,w,h)), thresh, True)
 
             # Last box is best match
@@ -324,8 +324,8 @@ class screenImageProcessor:
             cv.circle(img,(x,y+h),      10,         (0,255,255), 5)
             ros.logwarn('Bad read')
         else:
-            self.filter.write(x, y, w, h)
-            x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
+            # self.filter.write(x, y, w, h)
+            # x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
             fillPercent = self.findFillRatio(rectInt((x,y,w,h)), thresh, True)
 
             # Last box is best match

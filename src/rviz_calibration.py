@@ -22,15 +22,16 @@ from typing import Dict, Tuple
 import numpy as np
 import pathlib
 
-def calibrate(xScore:float, yScore:float, xCalibrate:Calibrator, yCalibrate:Calibrator):
+def calibrate(xScore:float, yScore:float, scaleScore:float, xCalibrate:Calibrator, yCalibrate:Calibrator, zCalibrate:Calibrator):
     """
     Compute the calibrators
     """
     xCalibrate.compute(xScore)
     yCalibrate.compute(yScore)
+    zCalibrate.compute(scaleScore)
     
 
-def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int], depthSize:Tuple[int,int], calib:bool, vFilter:ValueFilter, xCalibrate:Calibrator, yCalibrate:Calibrator):
+def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int], depthSize:Tuple[int,int], calib:bool, vFilter:ValueFilter, xCalibrate:Calibrator, yCalibrate:Calibrator, zCalibrate:Calibrator):
     """
     Run the calibration algorithm
     """
@@ -41,13 +42,14 @@ def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int
     # Calculate the scores
     xScore = (colorRelRect.x + colorRelRect.w/2) - (depthRelRect.x + depthRelRect.w/2)
     yScore = (colorRelRect.y + colorRelRect.h/2) - (depthRelRect.y + depthRelRect.h/2)
+    scaleScore = ((colorRelRect.h - depthRelRect.h) + (colorRelRect.w - depthRelRect.w)) / 2
     
     # Filter scores
-    vFilter.write(xScore, yScore)
-    xScore, yScore = vFilter.value
+    vFilter.write(xScore, yScore, scaleScore)
+    xScore, yScore, scaleScore = vFilter.value
 
     if calib: # Calibrate
-        calibrate(xScore, yScore, xCalibrate, yCalibrate)
+        calibrate(xScore, yScore, scaleScore, xCalibrate, yCalibrate, zCalibrate)
 
 
 
@@ -62,7 +64,7 @@ def convertBoxToRectInt(box:Dict[str,float]):
     res.h = box['height']
     return res
 
-def saveData(xOutput:float, yOutput:float):
+def saveData(xOutput:float, yOutput:float, zOutput:float):
     """
     Save the programed values
     """
@@ -73,7 +75,7 @@ def saveData(xOutput:float, yOutput:float):
     ros.loginfo(f'Saving values to: {result_file}')
     with open(result_file, 'w') as writer:
         writer.write('OUTPUT VALUES\n')
-        writer.write(f'x y z: {xOutput} {yOutput} 0\n\n')
+        writer.write(f'x y z: {xOutput} {yOutput} {zOutput}\n\n')
         
         writer.write('PARAMETERS\n')
 
@@ -86,11 +88,11 @@ def saveData(xOutput:float, yOutput:float):
             writer.write(f'{key}: {val.value}\n')
         writer.close()
         
-def afterCalibration(xOutput:float, yOutput:float):
+def afterCalibration(xOutput:float, yOutput:float, zOutput:float):
     """
     Code to run after calibration is stopped
     """
-    saveData(xOutput, yOutput)
+    saveData(xOutput, yOutput, zOutput)
     checkInput('Calibration paused.', InputOption('c', 'Resume calibration'))
 
 if __name__ == '__main__':
@@ -142,9 +144,10 @@ if __name__ == '__main__':
         # Setup the calibrators
         xCalibrate = Calibrator(0.004)
         yCalibrate = Calibrator(0.004)
+        zCalibrate = Calibrator(0.004)
 
         # Value filter for the depth stream
-        vFilter = ValueFilter(3, 0.2, 5)
+        vFilter = ValueFilter(3, 0.2, 15, 3)
 
         doCalibrate = False
 
@@ -157,6 +160,8 @@ if __name__ == '__main__':
                 xThreshold='< 0.02 is pretty good', 
                 yError=yCalibrate.error,
                 yThreshold='< 0.02 is pretty good',
+                zError=zCalibrate.error,
+                zThreshold='< 0.02 is pretty good',
                 ExitProgram='Press q',
                 Calibrate='Press and hold c',
                 ResetCalibration='Press x',
@@ -185,7 +190,7 @@ if __name__ == '__main__':
                 raise KeyboardInterrupt()
 
             if doCalibrate:
-                vFilter.fill(xCalibrate.output, yCalibrate.output)
+                vFilter.fill(xCalibrate.output, yCalibrate.output, zCalibrate.output)
                 
             doCalibrate = False
             if (keyPressed & 0xFF) == ord('c'):
@@ -193,20 +198,21 @@ if __name__ == '__main__':
                 doCalibrate = vFilter.index == 0
 
                 # Adjust transform
-                sendTransform(xCalibrate.output, yCalibrate.output, 0, tfbc)
+                sendTransform(xCalibrate.output, yCalibrate.output, zCalibrate.output, tfbc)
                 # ros.loginfo_throttle(2000, 'Calibration complete!')
-            isCalibrated = runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate, vFilter, xCalibrate, yCalibrate)
+            runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate, vFilter, xCalibrate, yCalibrate, zCalibrate)
 
             if (keyPressed & 0xFF) == ord('x'):
                 xCalibrate.reset()
                 yCalibrate.reset()
+                zCalibrate.reset()
                 sendTransform(0,0,0, tfbc)
                 ros.loginfo('Reset calibration parameters')
 
             if (keyPressed & 0xFF) == ord('z'):
                 colorProcessor.destroyWindows()
                 depthProcessor.destroyWindows()
-                afterCalibration(xCalibrate.output, yCalibrate.output)
+                afterCalibration(xCalibrate.output, yCalibrate.output, zCalibrate.output)
 
 
             # Update the adjustable parameters with the last pressed key
