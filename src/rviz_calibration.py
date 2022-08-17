@@ -29,7 +29,6 @@ def calibrate(xScore:float, yScore:float, scaleScore:float, xCalibrate:Calibrato
     xCalibrate.compute(xScore)
     yCalibrate.compute(yScore)
     zCalibrate.compute(scaleScore)
-    
 
 def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int], depthSize:Tuple[int,int], calib:bool, vFilter:ValueFilter, xCalibrate:Calibrator, yCalibrate:Calibrator, zCalibrate:Calibrator):
     """
