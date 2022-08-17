@@ -50,6 +50,8 @@ def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int
 
     if calib: # Calibrate
         calibrate(xScore, yScore, scaleScore, xCalibrate, yCalibrate, zCalibrate)
+    
+    return xScore, yScore, scaleScore
 
 
 
@@ -136,7 +138,7 @@ if __name__ == '__main__':
         colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD,
             thresh=adjustParam(200, ord('w'), ord('s'), 1, (0,255)))
         depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.DEPTH_THRESH_METHOD,
-            thresh=adjustParam(102, ord('e'), ord('d'), 1, (1,255)))
+            thresh=adjustParam(50, ord('e'), ord('d'), 1, (1,255)))
 
         # Make a debug window
         cv.namedWindow('Debug', cv.WINDOW_AUTOSIZE)
@@ -147,26 +149,13 @@ if __name__ == '__main__':
         zCalibrate = Calibrator(0.004)
 
         # Value filter for the depth stream
-        vFilter = ValueFilter(3, 0.2, 15, 3)
+        vFilter = ValueFilter(5, 1, 20, 3)
 
         doCalibrate = False
 
         # Main loop
         while True:
-            # Debug data
-            dbg=np.full((600,400),255, np.uint8)
-            debugData(dbg, 12, 0,
-                xError=xCalibrate.error,
-                xThreshold='< 0.02 is pretty good', 
-                yError=yCalibrate.error,
-                yThreshold='< 0.02 is pretty good',
-                zError=zCalibrate.error,
-                zThreshold='< 0.02 is pretty good',
-                ExitProgram='Press q',
-                Calibrate='Press and hold c',
-                ResetCalibration='Press x',
-                StopCalibration='Press z')
-            cv.imshow('Debug', dbg)
+            
 
             # Update the window positions
             colorCap.box = isolateCamera(color)
@@ -200,7 +189,7 @@ if __name__ == '__main__':
                 # Adjust transform
                 sendTransform(xCalibrate.output, yCalibrate.output, zCalibrate.output, tfbc)
                 # ros.loginfo_throttle(2000, 'Calibration complete!')
-            runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate, vFilter, xCalibrate, yCalibrate, zCalibrate)
+            xScore, yScore, scaleScore = runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate, vFilter, xCalibrate, yCalibrate, zCalibrate)
 
             if (keyPressed & 0xFF) == ord('x'):
                 xCalibrate.reset()
@@ -218,6 +207,22 @@ if __name__ == '__main__':
             # Update the adjustable parameters with the last pressed key
             colorProcessor.updateKeyPress(keyPressed)
             depthProcessor.updateKeyPress(keyPressed)
+            
+            # Debug data
+            dbg=np.full((600,400),255, np.uint8)
+            
+            debugData(dbg, 12, 0,
+                xError=xScore,
+                xThreshold='< 0.02 is pretty good', 
+                yError=yScore,
+                yThreshold='< 0.02 is pretty good',
+                zError=scaleScore,
+                zThreshold='< 0.02 is pretty good',
+                ExitProgram='Press q',
+                Calibrate='Press and hold c',
+                ResetCalibration='Press x',
+                StopCalibration='Press z')
+            cv.imshow('Debug', dbg)
 
 
     except KeyboardInterrupt: # End program
