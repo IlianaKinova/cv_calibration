@@ -15,10 +15,13 @@ class ValueFilter:
         self.index = 0
 
     def write(self, *args):
-        # self.buff[:,self.index] = args[:]
         for i, arg in enumerate(args):
             self.buff[i, self.index] = arg
         self.index = (self.index + 1) % self.iterations
+
+    def fill(self, *args):
+        for ii, _ in enumerate(self.buff[0,:]):
+            self.buff[:,ii] = args
 
     @property
     def value(self):

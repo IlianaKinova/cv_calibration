@@ -206,16 +206,23 @@ class screenImageProcessor:
                 yield rectInt(x=xx, y=yy, w=ww, h=hh) # Yield to streamline the process only iterating through once
         yield rectInt(x=x, y=y, w=w, h=h) # Last is the result
 
-    def threshMethod(self, img:cv.Mat, ignoreBlack:bool = False):
+    def drawBoxes(self, boxes:Iterable[rectInt], img:cv.Mat):
+        for x, y, w, h, rect in ((rect.x, rect.y, rect.w, rect.h, rect) for rect in boxes):
+            color = (random.randrange(0, 255), random.randrange(0, 255), 127)
+            cv.rectangle(img, (x,y), (x+w, y+h), color, 1)
+            cv.circle(img,(x+w,y),      5, color, 1)
+            cv.circle(img,(x,y),        5, color, 1)
+            cv.circle(img,(x+w,y+h),    5, color, 1)
+            cv.circle(img,(x,y+h),      5, color, 1)
+            yield rect
+
+    def threshMethod(self, img:cv.Mat):
         threshVal = self.calibArgs['thresh'].value
+        threshIntervalVal = self.calibArgs['threshInterval'].value
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-        ret, thresh = cv.threshold(gray,threshVal,255,cv.THRESH_BINARY_INV)
-        if ignoreBlack:
-            for x, column in enumerate(gray):
-                for y, p in enumerate(column):
-                    if p == 0:
-                        thresh[x, y] = 0
+        _, thresh = cv.threshold(gray, threshVal, 255, cv.THRESH_BINARY_INV)
+        # thresh = cv.inRange(gray, max(0, threshVal - threshIntervalVal), threshVal)
         cv.imshow(f'{self.name}_filter', thresh)
 
         # Canny Edge detection
@@ -226,19 +233,15 @@ class screenImageProcessor:
         boxes = self.findBoundingBoxes(canny)
         sized = self.filterMinMaxSize(boxes, 0.05, 0.45, img.shape[0]*img.shape[1])
         margined = self.filterMargin(sized, 0.05, img.shape[1], img.shape[0])
-        filled = self.filterThreshFillRatio(margined, thresh, 0.9, False)
+        drawn = self.drawBoxes(margined, img)
+        filled = self.filterThreshFillRatio(drawn, thresh, 0.8, False)
         # biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
         best = self.findBestScore(filled, 0.5, img.shape)
         # This is so that the entire process stays in generators so that iteration happens only once
 
-        # Draw all boxes
+        # Iterate over all boxes
         for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in best):
-            color = (random.randrange(0, 255), random.randrange(0, 255), 127)
-            cv.rectangle(img, (x,y), (x+w, y+h), color, 1)
-            cv.circle(img,(x+w,y),      5, color, 1)
-            cv.circle(img,(x,y),        5, color, 1)
-            cv.circle(img,(x+w,y+h),    5, color, 1)
-            cv.circle(img,(x,y+h),      5, color, 1)
+            pass
 
         fillPercent=0
 
@@ -295,31 +298,27 @@ class screenImageProcessor:
 
         # img8 = scale(hue, hue.min(),hue.max(), 0, 255).astype('uint8')
         img8 = hue.astype('uint8')
-        _, thresh = cv.threshold(img8,threshVal,255,cv.THRESH_BINARY_INV)
+        thresh = cv.inRange(img8, 1, threshVal)
         cv.imshow(f'{self.name}_filter', thresh)
 
         # Canny Edge detection
         canny = cv.Canny(thresh, 50, 200)
-        cv.imshow(f'{self.name}_canny', img8)
+        cv.imshow(f'{self.name}_canny', canny)
 
         # Find contours
         boxes = self.findBoundingBoxes(canny)
         sized = self.filterMinMaxSize(boxes, 0.05, 0.45, img.shape[0]*img.shape[1])
         margined = self.filterMargin(sized, 0.05, img.shape[1], img.shape[0])
-        filled = self.filterThreshFillRatio(margined, thresh, 0.9, True)
-        # biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
+        drawn = self.drawBoxes(margined, img)
+        filled = self.filterThreshFillRatio(drawn, thresh, 0.8, True)
         best = self.findBestScore(filled, 0.5, img.shape)
 
         # This is so that the entire process stays in generators so that iteration happens only once
 
-        # Draw all boxes
+        # Iterate over all boxes
         for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in best):
-            color = (random.randrange(0, 255), random.randrange(0, 255), 127)
-            cv.rectangle(img, (x,y), (x+w, y+h), color, 1)
-            cv.circle(img,(x+w,y),      5, color, 1)
-            cv.circle(img,(x,y),        5, color, 1)
-            cv.circle(img,(x+w,y+h),    5, color, 1)
-            cv.circle(img,(x,y+h),      5, color, 1)
+            pass
+        
 
         fillPercent=0
 

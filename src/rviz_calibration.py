@@ -1,4 +1,5 @@
 # Ros imports
+from time import sleep
 import rospy as ros
 import roslaunch
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
@@ -25,9 +26,9 @@ def calibrate(xScore:float, yScore:float, xCalibrate:Calibrator, yCalibrate:Cali
     """
     Compute the calibrators
     """
-    resx = xCalibrate.compute(xScore)
-    resy = yCalibrate.compute(yScore)
-    return resx and resy
+    xCalibrate.compute(xScore)
+    yCalibrate.compute(yScore)
+    
 
 def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int], depthSize:Tuple[int,int], calib:bool, vFilter:ValueFilter, xCalibrate:Calibrator, yCalibrate:Calibrator):
     """
@@ -46,10 +47,7 @@ def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int
     xScore, yScore = vFilter.value
 
     if calib: # Calibrate
-        res = calibrate(xScore, yScore, xCalibrate, yCalibrate)
-    else:
-        return False
-    return res
+        calibrate(xScore, yScore, xCalibrate, yCalibrate)
 
 
 
@@ -133,9 +131,11 @@ if __name__ == '__main__':
         depthCap = screenCapture(isolateCamera(depth))
 
         # Initialize the processors
-        colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD, thresh=adjustParam(100, ord('w'), ord('s'), 5, (0,255)))
+        colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD,
+            thresh=adjustParam(200, ord('w'), ord('s'), 1, (0,255)),
+            threshInterval=adjustParam(20, ord('e'), ord('d'), 1, (1,50)))
         depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.DEPTH_THRESH_METHOD,
-            thresh=adjustParam(102, ord('e'), ord('d'), 1, (0,255)))
+            thresh=adjustParam(102, ord('r'), ord('f'), 1, (1,255)))
 
         # Make a debug window
         cv.namedWindow('Debug', cv.WINDOW_AUTOSIZE)
@@ -145,7 +145,9 @@ if __name__ == '__main__':
         yCalibrate = Calibrator(0.004)
 
         # Value filter for the depth stream
-        vFilter = ValueFilter(5, 1, 10)
+        vFilter = ValueFilter(3, 0.2, 5)
+
+        doCalibrate = False
 
         # Main loop
         while True:
@@ -153,9 +155,9 @@ if __name__ == '__main__':
             dbg=np.full((600,400),255, np.uint8)
             debugData(dbg, 12, 0,
                 xError=xCalibrate.error,
-                xThreshold='< 0.005 is pretty good', 
+                xThreshold='< 0.02 is pretty good', 
                 yError=yCalibrate.error,
-                yThreshold='< 0.005 is pretty good',
+                yThreshold='< 0.02 is pretty good',
                 ExitProgram='Press q',
                 Calibrate='Press and hold c',
                 ResetCalibration='Press x',
@@ -183,6 +185,9 @@ if __name__ == '__main__':
             if (keyPressed & 0xFF) == ord('q'):
                 raise KeyboardInterrupt()
 
+            if doCalibrate:
+                vFilter.fill(xCalibrate.output, yCalibrate.output)
+                
             doCalibrate = False
             if (keyPressed & 0xFF) == ord('c'):
                 # Run the calibration algorithm
