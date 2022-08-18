@@ -1,4 +1,4 @@
-# CV Calibration
+# CV Calibration V1.2.0
 <a id="md-description" name="description"></a>
 ## Description
 This ROS package is made to be used in combination with [ros_kortex_vision](https://github.com/Kinovarobotics/ros_kortex_vision) package to provide a way to easily calibrate the color and depth camera streams. The calibration will however only be visible using [RViz](http://wiki.ros.org/rviz) or any visualizer that can listen to the static transforms topic to offset the point cloud data from the depth stream.
