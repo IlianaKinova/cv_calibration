@@ -16,6 +16,7 @@ This was meant as a solution for [Issue #1](https://github.com/Kinovarobotics/ro
         - [Using the program](#use)
             - [Configuring rviz](#conf-rviz)
             - [Configuring streams](#conf-streams)
+            - [Calibrating](#Calibrating)
             - [Saving the values](#save)
         - [Edge cases](#edgecases)
             - [Intrusions in depth](#intrusions)
@@ -98,9 +99,14 @@ Now a few windows will open. It may seem overwhelming at first but start by loca
 Now you can locate the window called "depth". You will notice that it says you can use the 'e' and 's' keys to adjust the threshold. Just like with the color window, locate the window named "depth_filter" and adjust the threshold until you see a clean shape. The filtering of the edge detection should be pretty good at ignoring intrusions. In the end, it should look something like this:
 <p align="left"> <img alt="AlignedDepth" src="resources/AlignedDepth.png" title="AlignedDepth"/> </p>
 
-Now you are ready to calibrate the streams. Locate the window called "Debug". Here you will see debug information. The xOffset and yOffset fields describe the relative offset from the middle of both of the rectangles found by the edge detection. Anything below 0.005 is good enough.
-To start calibrating, press and hold 'c'. You will start to see the depth stream moving as it attempts to correct the offsets. Wait until you are satisfied with the calibration (you can stop at any time and continue later). You can see a preview in rviz using the PointCloud2. In the end, it should look something like this:
-<p align="left"> <img alt="Calibrated" src="resources/Calibrated.png" title="Calibrated"/> </p>
+#### Calibrating
+Now you are ready to calibrate the streams. Locate the window called "Debug". Here you will see debug information. The xOffset, yOffset and zOffset fields describe the relative offset from the middle as well as the relative size of both of the rectangles found by the edge detection. Anything below 0.02 is good enough.
+To start calibrating, press and hold 'c'. You will start to see the depth stream moving as it attempts to correct the offsets.
+BEWARE, the z calibration added some issues where when the z calibrator moves, it can sometimes lose tracking. You may want to keep the depth_filter window up to make sure the calibration object is still visible. Adjust the depth threshold if this happens.
+Wait until you are satisfied with the calibration (you can stop at any time and continue later). You can see a preview in rviz using the PointCloud2. In the end, it should look something like this:
+<p align="left"> <img alt="Calibrated" src="resources/Final result z calib.png" title="Calibrated"/> </p>
+
+This screenshot was taken by turning off the DepthCloud and changing the PointCloud2 settings to use Squares with a smaller size.
 
 <a id="md-save" name="save"></a>
 #### Saving the values
@@ -128,4 +134,10 @@ Make sure your shape is well oriented with the camera. One of the ways to filter
 
 <a id="md-patch-notes" name="patch-notes"></a>
 ## Patch notes
-- V1.1.0: Improved the edge detection filtering significantly.
+### V1.1.0
+- Improved the edge detection.
+- Added filterng of the detected objects.
+### V1.2.0
+- Improved edge detection.
+- Added calibration of the z axis.
+- An issue can happen during calibration where the z calibration will require you to adjust the depth threshold (see [Calibrating](#Calibrating))
