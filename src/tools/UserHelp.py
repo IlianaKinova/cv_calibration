@@ -1,5 +1,6 @@
 from tools.utils import checkInput, InputOption
 import rospy as ros
+import Xlib.display
 
 def checkTopic(topic:str, failMsg:str, successMsg:str):
     """
@@ -32,10 +33,15 @@ def askRVIZ():
 
     checkInput('Done?') # Wait for user input
 
-def findFocusWithName(name:str, disp):
+def findFocusWithName():
     """
     For 3 seconds, check if the active window has the name 'name'
     """
+
+    # Get display
+    disp = Xlib.display.Display()
+
+    windowName = 'Camera'
 
     # Setup timeout
     end = ros.Time.now() + ros.Duration(secs=3)
@@ -44,15 +50,13 @@ def findFocusWithName(name:str, disp):
 
     while ros.Time.now() < end: # Wait until timeout
         window = disp.get_input_focus().focus # Get active window
-        if window.get_wm_name() == 'Camera': # Check name
+        if window.get_wm_name() == windowName : # Check name
             return True, window
 
-    ros.logwarn(f'Was expecting to find a window named "{name}" but found a window named "{window.get_wm_name()}".')
+    ros.logwarn(f'Was expecting to find a window named "{windowName}" but found a window named "{window.get_wm_name()}".')
     return False, window
-        
-        
 
-def findWindows(disp):
+def findWindows():
     """
     Guide the user to find the color and depth windows
     """
@@ -62,7 +66,7 @@ def findWindows(disp):
     while True:
         checkInput('When ready, press enter and select the color camera window and wait for 3 seconds or until the window is found.')
         
-        res, colorWindow = findFocusWithName('Camera', disp) # Look for color window
+        res, colorWindow = findFocusWithName() # Look for color window
         if res:
             userInput = checkInput('Found window!', InputOption('c', 'Continue'), InputOption('r', 'Retry'))
         else:
@@ -75,7 +79,7 @@ def findWindows(disp):
     while True:
         checkInput('When ready, press enter and select the depth camera window and wait for 3 seconds or until the window is found.')
 
-        res, depthWindow = findFocusWithName('Camera', disp) # Look for depth window
+        res, depthWindow = findFocusWithName() # Look for depth window
         if res:
             userInput = checkInput('Found window!', InputOption('c', 'Continue'), InputOption('r', 'Retry'))
         else:

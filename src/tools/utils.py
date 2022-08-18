@@ -1,4 +1,6 @@
+from numbers import Number
 import cv2 as cv
+from matplotlib.ft2font import ITALIC
 import rospy as ros
 import tf.transformations
 from geometry_msgs.msg import TransformStamped
@@ -84,3 +86,8 @@ def sendTransform(x:float, y:float, z:float, bc:StaticTransformBroadcaster):
     tfstamped.transform.rotation.w = quat[3]
 
     bc.sendTransform(tfstamped)
+
+def scale(value:Number, initMin:Number, initMax:Number, resMin:Number, resMax:Number):
+    initDelta = initMax - initMin
+    resDelta = resMax - resMin
+    return resMin + ((value - initMin) / initDelta) * resDelta

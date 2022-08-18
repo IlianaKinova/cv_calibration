@@ -1,13 +1,11 @@
 # Ros imports
+from time import sleep
 import rospy as ros
 import roslaunch
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 # Image related imports
 import cv2 as cv
-from mss import mss
-import Xlib
-import Xlib.display
 
 # Tools imports
 from tools.imageProcessor import screenImageProcessor, adjustParam, processingMethod, rectInt
@@ -24,43 +22,15 @@ from typing import Dict, Tuple
 import numpy as np
 import pathlib
 
-# Get display
-disp = Xlib.display.Display()
-
-# Get directory paths
-resources = pathlib.Path(__file__).parent.parent.joinpath('resources').resolve()
-launch = pathlib.Path(__file__).parent.parent.joinpath('launch').resolve()
-    
-def getScore(x1:float, y1:float, w1:float, h1:float,
-             x2:float, y2:float, w2:float, h2:float):
-    """
-    Get the scale and position offsets of the rectangles
-    """
-    # Average the offsets
-    avgOffset = ((x1+w1/2)-(x2+w2/2),(y1+h1/2)-(y2+h2/2))
-    if w2 == 0 or h2 == 0: # Avoid divided by 0 error
-        avgScale = 1
-    else: 
-        # Average the scale
-        avgScale = (w1/w2+h1/h2)/2
-    return avgScale, avgOffset
-
-# Setup the calibrators
-xCalibrate = Calibrator(0.004, 0.0005)
-yCalibrate = Calibrator(0.004, 0.0005)
-
-# Value filter for the depth stream
-vFilter = ValueFilter(5, 1, 10)
-
-def calibrate(xScore:float, yScore:float):
+def calibrate(xScore:float, yScore:float, scaleScore:float, xCalibrate:Calibrator, yCalibrate:Calibrator, zCalibrate:Calibrator):
     """
     Compute the calibrators
     """
-    resx = xCalibrate.compute(xScore)
-    resy = yCalibrate.compute(yScore)
-    return resx and resy
+    xCalibrate.compute(xScore)
+    yCalibrate.compute(yScore)
+    zCalibrate.compute(scaleScore)
 
-def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int], depthSize:Tuple[int,int], calib:bool):
+def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int], depthSize:Tuple[int,int], calib:bool, vFilter:ValueFilter, xCalibrate:Calibrator, yCalibrate:Calibrator, zCalibrate:Calibrator):
     """
     Run the calibration algorithm
     """
@@ -69,22 +39,18 @@ def runCalibration(colorRect:rectInt, depthRect:rectInt, colorSize:Tuple[int,int
     depthRelRect = depthRect.toRelative(depthSize)
 
     # Calculate the scores
-    scaleScore, (xScore, yScore) = getScore(colorRelRect.x, colorRelRect.y, colorRelRect.w, colorRelRect.h,
-        depthRelRect.x, depthRelRect.y, depthRelRect.w, depthRelRect.h)
+    xScore = (colorRelRect.x + colorRelRect.w/2) - (depthRelRect.x + depthRelRect.w/2)
+    yScore = (colorRelRect.y + colorRelRect.h/2) - (depthRelRect.y + depthRelRect.h/2)
+    scaleScore = ((colorRelRect.h - depthRelRect.h) + (colorRelRect.w - depthRelRect.w)) / 2
     
     # Filter scores
-    vFilter.write(xScore, yScore)
-    xScore, yScore = vFilter.value
-
-    # Update calibration values
-    xCalibrate.currentVal = xScore
-    yCalibrate.currentVal = yScore
+    vFilter.write(xScore, yScore, scaleScore)
+    xScore, yScore, scaleScore = vFilter.value
 
     if calib: # Calibrate
-        res = calibrate(xScore, yScore)
-    else:
-        return False
-    return res
+        calibrate(xScore, yScore, scaleScore, xCalibrate, yCalibrate, zCalibrate)
+    
+    return xScore, yScore, scaleScore
 
 
 
@@ -99,36 +65,40 @@ def convertBoxToRectInt(box:Dict[str,float]):
     res.h = box['height']
     return res
 
-def saveData():
+def saveData(xOutput:float, yOutput:float, zOutput:float):
     """
     Save the programed values
     """
-    file = resources.joinpath('Results.txt').resolve()
-    with open(file, 'w') as writer:
+    # Get directory paths
+    resources_folder = pathlib.Path(__file__).parent.parent.joinpath('resources').resolve()
+    result_file = resources_folder.joinpath("Results.txt").resolve()
+
+    ros.loginfo(f'Saving values to: {result_file}')
+    with open(result_file, 'w') as writer:
         writer.write('OUTPUT VALUES\n')
-        writer.write(f'x y z: {xCalibrate.output} {yCalibrate.output} 0\n\n')
+        writer.write(f'x y z: {xOutput} {yOutput} {zOutput}\n\n')
+        
         writer.write('PARAMETERS\n')
+
         writer.write('\nCOLOR\n')
         for key, val in colorProcessor.calibArgs.items():
             writer.write(f'{key}: {val.value}\n')
+
         writer.write('\nDEPTH\n')
         for key, val in depthProcessor.calibArgs.items():
             writer.write(f'{key}: {val.value}\n')
         writer.close()
         
-def afterCalibration():
+def afterCalibration(xOutput:float, yOutput:float, zOutput:float):
     """
     Code to run after calibration is stopped
     """
-    ros.loginfo(f'Saving values to: {resources.joinpath("Results.txt").resolve()}')
-    saveData()
+    saveData(xOutput, yOutput, zOutput)
     checkInput('Calibration paused.', InputOption('c', 'Resume calibration'))
 
 if __name__ == '__main__':
     # Start node
     ros.init_node('rviz_calibration', anonymous=True)
-
-    
 
     try:
         # Guide the user
@@ -140,11 +110,14 @@ if __name__ == '__main__':
         # Init depth transform publisher
         tfbc = StaticTransformBroadcaster()
 
+        launch_folder = pathlib.Path(__file__).parent.parent.joinpath('launch').resolve()
+        color_launch_file = launch_folder.joinpath('color_tf.launch').resolve()
+
         # Start color transform in parallel
         uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
         roslaunch.configure_logging(uuid)
         tracking_launch = roslaunch.parent.ROSLaunchParent(
-            uuid, [str(launch.joinpath('color_tf.launch').resolve())])
+            uuid, [str(color_launch_file)])
         tracking_launch.start()
 
         # Send an initial transform to allow rviz to enable the point cloud
@@ -154,38 +127,34 @@ if __name__ == '__main__':
         askRVIZ()
 
         # Make the user locate the proper windows
-        color, depth = findWindows(disp)
+        color, depth = findWindows()
 
         # Initialiaze captures
         colorCap = screenCapture(isolateCamera(color))
         depthCap = screenCapture(isolateCamera(depth))
 
         # Initialize the processors
-        colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD, thresh=adjustParam(100, ord('w'), ord('s'), 5, (0,255)))
-        depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.THRESH_ERODE_METHOD,
-            thresh=adjustParam(102, ord('e'), ord('d'), 1, (0,255)),
-            erode=adjustParam(10, ord('r'), ord('f'), 1, (0, 100)))
-
-        # Initialize the screen capture thingy
-        sct = mss()
+        colorProcessor = screenImageProcessor('color', 'bgr8', processingMethod.THRESH_METHOD,
+            thresh=adjustParam(200, ord('w'), ord('s'), 1, (0,255)))
+        depthProcessor = screenImageProcessor('depth', 'bgr8', processingMethod.DEPTH_THRESH_METHOD,
+            thresh=adjustParam(50, ord('e'), ord('d'), 1, (1,255)))
 
         # Make a debug window
         cv.namedWindow('Debug', cv.WINDOW_AUTOSIZE)
 
+        # Setup the calibrators
+        xCalibrate = Calibrator(0.004)
+        yCalibrate = Calibrator(0.004)
+        zCalibrate = Calibrator(0.004)
+
+        # Value filter for the depth stream
+        vFilter = ValueFilter(5, 1, 20, 3)
+
+        doCalibrate = False
+
         # Main loop
         while True:
-            # Debug data
-            dbg=np.full((600,400),255, np.uint8)
-            debugData(dbg, 12, 0,
-                xError=xCalibrate.error,
-                xThreshold=xCalibrate.threshold,
-                yError=yCalibrate.error,
-                yThreshold=yCalibrate.threshold,
-                ExitProgram='Press q',
-                Calibrate='Press and hold c',
-                ResetCalibration='Press x',
-                StopCalibration='Press z')
-            cv.imshow('Debug', dbg)
+            
 
             # Update the window positions
             colorCap.box = isolateCamera(color)
@@ -208,30 +177,51 @@ if __name__ == '__main__':
             if (keyPressed & 0xFF) == ord('q'):
                 raise KeyboardInterrupt()
 
+            if doCalibrate:
+                vFilter.fill(xCalibrate.output, yCalibrate.output, zCalibrate.output)
+                
             doCalibrate = False
             if (keyPressed & 0xFF) == ord('c'):
                 # Run the calibration algorithm
                 doCalibrate = vFilter.index == 0
 
                 # Adjust transform
-                sendTransform(xCalibrate.output, yCalibrate.output, 0, tfbc)
+                sendTransform(xCalibrate.output, yCalibrate.output, zCalibrate.output, tfbc)
                 # ros.loginfo_throttle(2000, 'Calibration complete!')
-            isCalibrated = runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate)
+            xScore, yScore, scaleScore = runCalibration(colorProcessor.rect, depthProcessor.rect, colorSize, depthSize, doCalibrate, vFilter, xCalibrate, yCalibrate, zCalibrate)
 
             if (keyPressed & 0xFF) == ord('x'):
                 xCalibrate.reset()
                 yCalibrate.reset()
+                zCalibrate.reset()
+                sendTransform(0,0,0, tfbc)
                 ros.loginfo('Reset calibration parameters')
 
             if (keyPressed & 0xFF) == ord('z'):
                 colorProcessor.destroyWindows()
                 depthProcessor.destroyWindows()
-                afterCalibration()
+                afterCalibration(xCalibrate.output, yCalibrate.output, zCalibrate.output)
 
 
             # Update the adjustable parameters with the last pressed key
             colorProcessor.updateKeyPress(keyPressed)
             depthProcessor.updateKeyPress(keyPressed)
+            
+            # Debug data
+            dbg=np.full((600,400),255, np.uint8)
+            
+            debugData(dbg, 12, 0,
+                xError=xScore,
+                xThreshold='< 0.02 is pretty good', 
+                yError=yScore,
+                yThreshold='< 0.02 is pretty good',
+                zError=scaleScore,
+                zThreshold='< 0.02 is pretty good',
+                ExitProgram='Press q',
+                Calibrate='Press and hold c',
+                ResetCalibration='Press x',
+                StopCalibration='Press z')
+            cv.imshow('Debug', dbg)
 
 
     except KeyboardInterrupt: # End program
