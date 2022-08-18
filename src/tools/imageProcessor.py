@@ -1,10 +1,14 @@
 import enum
+from math import sqrt
 from numbers import Number
-from typing import Any, Tuple
+import random
+from typing import Any, Callable, Iterable, List, Tuple, Union, overload
 
 import cv2 as cv
 import numpy as np
-from tools.utils import debugData
+from tools.utils import debugData, scale
+from tools.ValueFilter import ValueFilter
+import rospy as ros
 
 class rectFloat:
     def __init__(self):
@@ -13,7 +17,7 @@ class rectFloat:
         self.w = float(0)
         self.h = float(0)
 
-    def toAbsolute(self, screenSize:'Tuple[int,int]'):
+    def toAbsolute(self, screenSize:Tuple[int,int]):
         res = rectInt()
         res.x = int(self.x * screenSize[0])
         res.w = int(self.w * screenSize[0])
@@ -22,35 +26,44 @@ class rectFloat:
         return res
 
 class rectInt:
-    def __init__(self, obj:Any=None):
+    def __init__(self, obj:Union[Tuple[int,int,int,int],List[int],Any]=None, x:int=None, y:int=None, w:int=None, h:int=None):
         self.x = int(0)
         self.y = int(0)
         self.w = int(0)
         self.h = int(0)
         if obj is not None:
-            self.x = int(obj.x)
-            self.y = int(obj.y)
-            self.w = int(obj.w)
-            self.h = int(obj.h)
+            if hasattr(obj, 'x') and hasattr(obj, 'y') and hasattr(obj, 'w') and hasattr(obj, 'h'):
+                self.x = int(obj.x)
+                self.y = int(obj.y)
+                self.w = int(obj.w)
+                self.h = int(obj.h)
+                return
+            if hasattr(obj, '__getitem__') and len(obj) >= 4:
+                self.x = obj[0]
+                self.y = obj[1]
+                self.w = obj[2]
+                self.h = obj[3]
+                return
+        if x is not None:
+            self.x = x
+        if y is not None:
+            self.y = y
+        if w is not None:
+            self.w = w
+        if h is not None:
+            self.h = h
 
-    def toRelative(self, screenSize:'Tuple[int,int]'):
+    def toRelative(self, screenSize:Tuple[int,int]):
         res = rectFloat()
         res.x = float(self.x) / screenSize[0]
         res.w = float(self.w) / screenSize[0]
         res.y = float(self.y) / screenSize[1]
         res.h = float(self.h) / screenSize[1]
         return res
-        
-
-class Rect(rectInt):
-    pass
 
 class processingMethod(enum.Enum):
     THRESH_METHOD = 0
     DEPTH_THRESH_METHOD = 1
-    DEPTH_BLOB_FINDER = 2
-    THRESH_IGNORE_BLACK_METHOD = 3
-    THRESH_ERODE_METHOD = 4
 
 class adjustParam:
     def __init__(self, initVal: Number, increaseKey:int, decreaseKey:int, step:Number = 5, range:Tuple[Number,Number]=None):
@@ -79,15 +92,7 @@ class screenImageProcessor:
         For method == calibrationMethod.THRESH_METHOD, args:\n
             -thresh\n
         For method == calibrationMethod.DEPTH_THRESH_METHOD, args:\n
-            -threshMin\n
-            -threshMax\n
-            -xMin\n
-            -xMax\n
-            -yMin\n
-            -yMax\n
-            -cannyMin\n
-            -cannyMax\n
-            -blurSize\n
+            -thresh\n
         """
         self.name = name
         self.rect = rectInt()
@@ -95,6 +100,8 @@ class screenImageProcessor:
         self.calibArgs = kwargs
         self.encoding = encoding
         self.isInit = False
+        self.filter = ValueFilter(2, 1, 10, 4)
+        self.depthRange = (255, 0)
 
     def init(self):
         if not self.isInit:
@@ -103,16 +110,107 @@ class screenImageProcessor:
             cv.namedWindow(f'{self.name}_filter', cv.WINDOW_AUTOSIZE)
             self.isInit = True
 
-    def threshMethod(self, img:cv.Mat, ignoreBlack:bool = False):
+    def findBoundingBoxes(self, canny:cv.Mat):
+        cnts = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[-2:]
+        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+        for c in cnts:
+            x, y, w, h = cv.boundingRect(c)
+            yield rectInt(x=x, y=y, w=w, h=h)
+
+    def findBiggestBox(self, boxes:Iterable[rectInt]):
+        x, y, w, h = (0,0,0,0)
+        area = 0
+        for xx, yy, ww, hh in ((rect.x, rect.y, rect.w, rect.h) for rect in boxes):
+            if ww * hh > area:
+                if area != 0: # Don't yield a 0,0,0,0 box
+                    # Yield the previously biggest box since it was never yielded
+                    yield rectInt(x=x, y=y, w=w, h=h)
+
+                x = xx
+                y = yy
+                w = ww
+                h = hh
+                area = w * h
+                # To avoid yielding the biggest box multiple times, we don't yield here
+            else: # Yield every box that isn't the biggest
+                yield rectInt(x=xx, y=yy, w=ww, h=hh) # Yield to streamline the process only iterating through once
+        yield rectInt(x=x, y=y, w=w, h=h) # Last is the result
+        
+            
+    def filterMinMaxSize(self, boxes:Iterable[rectInt], minCoverage:float, maxCoverage:float, screenArea:int):
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in boxes):
+            coverage = (w * h) / screenArea
+            if minCoverage < coverage and coverage < maxCoverage:
+                yield rectInt(x=x, y=y, w=w, h=h) # Yield to streamline the process only iterating through once
+
+    def findFillRatio(self, box:rectInt, thresh:cv.Mat, whiteFill=True):
+        if whiteFill:
+            return np.average(thresh[box.y:box.y+box.h, box.x:box.x+box.w]) / 255
+        else:
+            return 1 - (np.average(thresh[box.y:box.y+box.h, box.x:box.x+box.w]) / 255)
+
+    def filterThreshFillRatio(self, boxes:Iterable[rectInt], thresh:cv.Mat, minFilling:float=0.9, whiteFill=True):
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in boxes):
+            if self.findFillRatio(rectInt((x,y,w,h)), thresh, whiteFill) > minFilling:
+                yield rectInt(x=x, y=y, w=w, h=h)
+
+    def filterMargin(self, boxes:Iterable[rectInt], relativeMargin:float, width:int, height:int):
+        for rect in boxes:
+            relRect = rect.toRelative((width, height))
+            if (relativeMargin < relRect.x) and (relRect.x + relRect.w < 1.0 - relativeMargin) and (relativeMargin < relRect.y) and (relRect.y + relRect.h < 1.0 - relativeMargin):
+                yield rect
+
+    def relDistanceToMid(self, box:rectInt, screenSize:Tuple[int,int]):
+        relBox = box.toRelative((screenSize[1],screenSize[0]))
+        return np.linalg.norm(np.array([relBox.x + 0.5, relBox.y + 0.5]) - np.array([0.5,0.5]))
+
+    def calcDistSizeScore(self, relDist:float, relSize:float, ratio:float):
+        """
+        ratio is the ratio of impact of size compared to distance.
+        A ratio of 1 means that the distance is ignored.
+        If 0.8 is used, then the size will have an impact of 0.8 and the distance will have an impact of 0.2
+        """
+        return relSize * ratio + (1.0 - ratio) * (1 - relDist / sqrt(2))
+
+    def findBestScore(self, boxes:Iterable[rectInt], ratio:float, screenSize:Tuple[int,int]):
+        x, y, w, h = (0,0,0,0)
+        score = 0
+        for xx, yy, ww, hh, rect in ((rect.x, rect.y, rect.w, rect.h, rect) for rect in boxes):
+            area = (ww * hh) / (screenSize[0]*screenSize[1])
+            dist = self.relDistanceToMid(rect, screenSize)
+            s = self.calcDistSizeScore(dist, area, ratio)
+
+            if s > score:
+                if x==0 and y==0 and w==0 and h==0: # Don't yield a 0,0,0,0 box
+                    # Yield the previously best box since it was never yielded
+                    yield rectInt(x=x, y=y, w=w, h=h)
+
+                x = xx
+                y = yy
+                w = ww
+                h = hh
+                score = w * h
+                # To avoid yielding the best box multiple times, we don't yield here
+            else: # Yield every box that isn't the best
+                yield rectInt(x=xx, y=yy, w=ww, h=hh) # Yield to streamline the process only iterating through once
+        yield rectInt(x=x, y=y, w=w, h=h) # Last is the result
+
+    def drawBoxes(self, boxes:Iterable[rectInt], img:cv.Mat):
+        for x, y, w, h, rect in ((rect.x, rect.y, rect.w, rect.h, rect) for rect in boxes):
+            color = (random.randrange(0, 255), random.randrange(0, 255), 127)
+            cv.rectangle(img, (x,y), (x+w, y+h), color, 1)
+            cv.circle(img,(x+w,y),      5, color, 1)
+            cv.circle(img,(x,y),        5, color, 1)
+            cv.circle(img,(x+w,y+h),    5, color, 1)
+            cv.circle(img,(x,y+h),      5, color, 1)
+            yield rect
+
+    def threshMethod(self, img:cv.Mat):
         threshVal = self.calibArgs['thresh'].value
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-        ret, thresh = cv.threshold(gray,threshVal,255,cv.THRESH_BINARY_INV)
-        if ignoreBlack:
-            for x, column in enumerate(gray):
-                for y, p in enumerate(column):
-                    if p == 0:
-                        thresh[x, y] = 0
+        _, thresh = cv.threshold(gray, threshVal, 255, cv.THRESH_BINARY_INV)
+        # thresh = cv.inRange(gray, max(0, threshVal - threshIntervalVal), threshVal)
         cv.imshow(f'{self.name}_filter', thresh)
 
         # Canny Edge detection
@@ -120,154 +218,137 @@ class screenImageProcessor:
         cv.imshow(f'{self.name}_canny', canny)
 
         # Find contours
-        cnts = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[-2:]
-        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-        x=0
-        y=0
-        w=0
-        h=0
-        for c in cnts:
-            x, y, w, h = cv.boundingRect(c)
+        boxes = self.findBoundingBoxes(canny)
+        sized = self.filterMinMaxSize(boxes, 0.05, 0.45, img.shape[0]*img.shape[1])
+        margined = self.filterMargin(sized, 0.05, img.shape[1], img.shape[0])
+        drawn = self.drawBoxes(margined, img)
+        filled = self.filterThreshFillRatio(drawn, thresh, 0.8, False)
+        # biggest = self.findBiggestBox(filled) # This still returns every box, but the last element is the biggest box
+        best = self.findBestScore(filled, 0.5, img.shape)
+        # This is so that the entire process stays in generators so that iteration happens only once
 
-        # My coordinates
-        try:
+        # Iterate over all boxes
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in best):
+            pass
+
+        fillPercent=0
+
+        # Filter values
+        if x==0 and y==0 and w==0 and h==0:
+            # Show last box
+            x = self.rect.x
+            y = self.rect.y
+            w = self.rect.w
+            h = self.rect.h
+            cv.rectangle(img, (x,y), (x+w, y+h),    (0,255,255), 2)
+            cv.circle(img,(x,y),        10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y),      10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y+h),    10,         (0,255,255), 5)
+            cv.circle(img,(x,y+h),      10,         (0,255,255), 5)
+            ros.logwarn('Bad read')
+        else:
+            # self.filter.write(x, y, w, h)
+            # x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
+            fillPercent = self.findFillRatio(rectInt((x,y,w,h)), thresh, True)
+
+            # Last box is best match
+            cv.rectangle(img, (x,y), (x+w, y+h), (255,255,0), 2)
             cv.circle(img,(x,y),        10, (255,255,0), 5)
             cv.circle(img,(x+w,y),      10, (255,255,0), 5)
             cv.circle(img,(x+w,y+h),    10, (255,255,0), 5)
             cv.circle(img,(x,y+h),      10, (255,255,0), 5)
-        except (UnboundLocalError):
-            pass
-        debugData(img, 20, (255,0,0), Threshold=str(threshVal),
+            self.rect.x = x
+            self.rect.y = y
+            self.rect.w = w
+            self.rect.h = h
+
+        debugData(img, 20, (255,0,0),
             TopLeft=    (x,y),
             TopRight=   (x+w,y),
             BottomRight=(x+w,y+h),
             BottomLeft= (x,y+h),
+            FillPercent=fillPercent,
             **self.calibArgs)
-        self.rect.x = x
-        self.rect.y = y
-        self.rect.w = w
-        self.rect.h = h
+
         cv.imshow(self.name,img)
 
-    def threshErodeMethod(self, img:cv.Mat):
-        threshVal = self.calibArgs['thresh'].value
-        erodeVal = self.calibArgs['erode'].value
-        gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    def testMargined(self):
+        boxes = [rectInt(0,0, 10, 10), rectInt(90, 90, 20, 20)]
+        res = list(self.filterMargin(boxes, 0.01, 200, 200))
+        assert len(res) == 1
+        ros.loginfo(f'Margin test:{res}')
 
-        ret, thresh = cv.threshold(gray,threshVal,255,cv.THRESH_BINARY_INV)
+    def depthThreshMethod(self, img:cv.Mat):
+        threshVal = self.calibArgs['thresh'].value
+        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+        hue = np.zeros((img.shape[0],img.shape[1]), np.uint8)
+        hue[:,:] = hsv[:,:,0]
+
+        # img8 = scale(hue, hue.min(),hue.max(), 0, 255).astype('uint8')
+        img8 = hue.astype('uint8')
+        thresh = cv.inRange(img8, 1, threshVal)
         cv.imshow(f'{self.name}_filter', thresh)
 
-        kernel = np.ones((erodeVal,erodeVal),np.uint8)
-        eroded = cv.erode(thresh, kernel)
-
         # Canny Edge detection
-        canny = cv.Canny(eroded, 50, 200)
+        canny = cv.Canny(thresh, 50, 200)
         cv.imshow(f'{self.name}_canny', canny)
 
         # Find contours
-        cnts = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[-2:]
-        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-        x=0
-        y=0
-        w=0
-        h=0
-        for c in cnts:
-            x, y, w, h = cv.boundingRect(c)
+        boxes = self.findBoundingBoxes(canny)
+        sized = self.filterMinMaxSize(boxes, 0.05, 0.45, img.shape[0]*img.shape[1])
+        margined = self.filterMargin(sized, 0.05, img.shape[1], img.shape[0])
+        drawn = self.drawBoxes(margined, img)
+        filled = self.filterThreshFillRatio(drawn, thresh, 0.8, True)
+        best = self.findBestScore(filled, 0.5, img.shape)
 
-        # My coordinates
-        try:
+        # This is so that the entire process stays in generators so that iteration happens only once
+
+        # Iterate over all boxes
+        for x, y, w, h in ((rect.x, rect.y, rect.w, rect.h) for rect in best):
+            pass
+        
+
+        fillPercent=0
+
+        # Filter values
+        if x==0 and y==0 and w==0 and h==0:
+            # Show last box
+            x = self.rect.x
+            y = self.rect.y
+            w = self.rect.w
+            h = self.rect.h
+            cv.rectangle(img, (x,y), (x+w, y+h),    (0,255,255), 2)
+            cv.circle(img,(x,y),        10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y),      10,         (0,255,255), 5)
+            cv.circle(img,(x+w,y+h),    10,         (0,255,255), 5)
+            cv.circle(img,(x,y+h),      10,         (0,255,255), 5)
+            ros.logwarn('Bad read')
+        else:
+            # self.filter.write(x, y, w, h)
+            # x, y, w, h = tuple([int(round(v)) for v in self.filter.value])
+            fillPercent = self.findFillRatio(rectInt((x,y,w,h)), thresh, True)
+
+            # Last box is best match
+            cv.rectangle(img, (x,y), (x+w, y+h), (255,255,0), 2)
             cv.circle(img,(x,y),        10, (255,255,0), 5)
             cv.circle(img,(x+w,y),      10, (255,255,0), 5)
             cv.circle(img,(x+w,y+h),    10, (255,255,0), 5)
             cv.circle(img,(x,y+h),      10, (255,255,0), 5)
-        except (UnboundLocalError):
-            pass
-        debugData(img, 20, (255,0,0), Threshold=str(threshVal),
+            self.rect.x = x
+            self.rect.y = y
+            self.rect.w = w
+            self.rect.h = h
+        
+        debugData(img, 20, (255,0,0),
             TopLeft=    (x,y),
             TopRight=   (x+w,y),
             BottomRight=(x+w,y+h),
             BottomLeft= (x,y+h),
+            FillPercent=fillPercent,
             **self.calibArgs)
-        self.rect.x = x
-        self.rect.y = y
-        self.rect.w = w
-        self.rect.h = h
+
         cv.imshow(self.name,img)
 
-    def depthThreshMethod(self, img:cv.Mat):
-
-        # Get the adjustable parameter values
-        threshValMin =  self.calibArgs['threshMin'].value
-        threshValMax =  self.calibArgs['threshMax'].value
-        xMin =          self.calibArgs['xMin'].value
-        xMax =          self.calibArgs['xMax'].value
-        yMin =          self.calibArgs['yMin'].value
-        yMax =          self.calibArgs['yMax'].value
-        cannyMin =      self.calibArgs['cannyMin'].value
-        cannyMax =      self.calibArgs['cannyMax'].value
-        blurSize =      self.calibArgs['blurSize'].value
-
-        # Turn the 16 bit grayscale to an 8 bit image, but also take the detected range of values (depths) and scale it up so it takes the entire 8 bits
-        # Example, the min value is 0, the max value is 100, so we scale it up so that in the end, a value of 100 will be converted to 256
-        delta = img.max() - img.min()
-        img8 = (img - img.min() * (0xFFFFFFFF/delta) / 256).astype('uint8')
-
-        blurred = cv.blur(img8,(blurSize,blurSize)) # I found that blurring the image a little helped get better edge detection
-
-        _, thresh = cv.threshold(blurred,threshValMin,threshValMax,cv.THRESH_BINARY_INV) # Threshold to isolate the depth we want to detect
-
-        # Crop the selected area we want to detect
-        cropped = np.zeros(thresh.shape, thresh.dtype)
-        cropped[yMin:yMax, xMin:xMax] = thresh[yMin:yMax, xMin:xMax]
-
-
-        # Canny Edge detection
-        canny = cv.Canny(cropped, cannyMin, cannyMax)
-        dbg_canny = np.zeros(canny.shape, canny.dtype)
-        dbg_canny[:,:] = canny[:,:]
-        # cv.rectangle(dbg_canny, (xMin,yMin), (xMax,yMax), (127), 2)
-        cv.imshow(f'{self.name}_canny', dbg_canny)
-
-        # Find contours
-        cnts = cv.findContours(canny, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[-2:]
-        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-        x=0
-        y=0
-        w=0
-        h=0
-        for c in cnts:
-            x, y, w, h = cv.boundingRect(c)
-
-        # Corodinates of the square
-        try:
-            cv.circle(thresh,(x,y),     10, (128), 5)
-            cv.circle(thresh,(x+w,y),   10, (128), 5)
-            cv.circle(thresh,(x+w,y+h), 10, (128), 5)
-            cv.circle(thresh,(x,y+h),   10, (128), 5)
-        except (UnboundLocalError):
-            pass
-        debugData(thresh, 10, (128),
-            TopLeft=    (x,y),
-            TopRight=   (x+w,y),
-            BottomRight=(x+w,y+h),
-            BottomLeft= (x,y+h),
-            **self.calibArgs)
-        cv.imshow(f'{self.name}_filter', thresh)
-        cv.imshow(self.name, img8)
-        self.rect.x = x
-        self.rect.y = y
-        self.rect.w = w
-        self.rect.h = h
-
-    
-
-    def depthBlobFinder(self, img:cv.Mat):
-        img8 = (img/256).astype('uint8')
-        detector = cv.SimpleBlobDetector()
-        points = detector.detect(img)
-        cv.drawKeypoints(img8, points, np.array([]), (128), cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-        cv.imshow(self.name, img8)
-    
     def updateKeyPress(self, key:int):
         for k, arg in self.calibArgs.items():
             arg.update(key)
@@ -284,9 +365,3 @@ class screenImageProcessor:
             self.threshMethod(input)
         if self.method == processingMethod.DEPTH_THRESH_METHOD:
             self.depthThreshMethod(input)
-        if self.method == processingMethod.DEPTH_BLOB_FINDER:
-            self.depthBlobFinder(input)
-        if self.method == processingMethod.THRESH_IGNORE_BLACK_METHOD:
-            self.threshMethod(input, True)
-        if self.method == processingMethod.THRESH_ERODE_METHOD:
-            self.threshErodeMethod(input)
